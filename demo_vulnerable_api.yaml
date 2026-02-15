@@ -1,0 +1,32 @@
+openapi: 3.0.0
+info:
+  title: Vulnerable E-Commerce API
+  version: 1.0.0
+paths:
+  /orders/{orderId}:
+    get:
+      summary: Get Order Details
+      description: Returns details of a specific order.
+      responses:
+        '200':
+          description: Order found
+      security:
+        - bearerAuth: []
+  /users/{userId}/profile:
+    get:
+      summary: Get User Profile
+      responses:
+        '200':
+          description: Profile found
+  /admin/system_config:
+    get:
+      summary: Admin Configuration
+      description: Sensitive system configuration.
+      responses:
+        '200':
+          description: Config data
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer

@@ -1,0 +1,24 @@
+# APEX Centralized Requirements
+# Install with: pip install -r requirements.txt
+
+# --- Core / Dynamic Service ---
+fastapi==0.109.0
+uvicorn==0.27.0
+sqlalchemy==2.0.25
+mysql-connector-python==8.2.0
+httpx==0.26.0
+requests
+pydantic==2.5.3
+pydantic-settings==2.1.0
+alembic==1.13.1
+python-multipart==0.0.7
+pyyaml==6.0.1
+
+# --- Static Analysis Module ---
+colorama>=0.4.6
+openapi-spec-validator>=0.7.0
+typer>=0.9.0
+rich>=13.7.0
+
+# --- Dev / Testing (Optional) ---
+pytest

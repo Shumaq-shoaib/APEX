@@ -1,0 +1,14 @@
+overrides:
+  severity:
+    check_unsafe_consumption: High     # bump HTTP servers to High
+  disable:
+    - check_improper_inventory         # turn off if too chatty
+
+custom_rules:
+  - key: org.no-internal-paths
+    name: No /internal paths
+    severity: Medium
+    type: path_regex
+    pattern: "^/internal/"
+    description: Internal endpoints must not be present in public specs.
+    

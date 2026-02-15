@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  # ------------------------------------------------------------
+  # 1. API Backend (Dynamic Service + Static Scanner Gateway)
+  # ------------------------------------------------------------
+  backend:
+    build:
+      context: ./apex-dynamic-service
+    container_name: apex-backend
+    # ports: <-- key removed completely
+    environment:
+      - DATABASE_URL=mysql+mysqlconnector://apex:apex@127.0.0.1:3306/apex_db
+      - STATIC_ANALYSIS_PATH=/static_analysis
+    depends_on:
+      - db
+    volumes:
+      # Mount Static Analysis source for scanning
+      - ./static_analysis:/static_analysis
+      # Mount Dynamic Service code (including alembic) for hot-reload & persistence
+      - ./apex-dynamic-service:/app
+    # networks:
+    #   - apex-net
+    network_mode: "host"
+
+  # ------------------------------------------------------------
+  # 2. Frontend Dashboard (React + Vite)
+  # ------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend/dashboard
+    container_name: apex-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000
+    depends_on:
+      - backend
+    volumes:
+      # Mount source code for Hot Module Replacement (HMR)
+      - ./frontend/dashboard:/app
+      # Do not overwrite container node_modules with host's (which might be empty or wrong arch)
+      - /app/node_modules
+    networks:
+      - apex-net
+
+  # ------------------------------------------------------------
+  # 3. Database (MySQL 8.0)
+  # ------------------------------------------------------------
+  db:
+    image: mysql:8.0
+    container_name: apex-db
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: apex_db
+      MYSQL_USER: apex
+      MYSQL_PASSWORD: apex
+    ports:
+      - "3306:3306"
+    networks:
+      - apex-net
+    volumes:
+      - apex_db_data:/var/lib/mysql
+
+networks:
+  apex-net:
+
+
+volumes:
+  apex_db_data:

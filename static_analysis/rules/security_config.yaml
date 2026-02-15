@@ -1,0 +1,22 @@
+# your_rules.yaml
+sensitive_keywords:
+  - password
+  - token
+  - api_key
+  - otp
+  - pin
+  - cnic           # 🇵🇰 example
+  - iban
+  - passport
+  - mother_maiden_name
+  - cvv
+  - ssn            # if you also operate in US contexts
+required_security_headers:
+  - content-security-policy
+  - strict-transport-security
+  - x-content-type-options
+  - x-frame-options
+  - referrer-policy
+  - cross-origin-opener-policy
+  - permissions-policy        # optional extra
+  - x-permitted-cross-domain-policies

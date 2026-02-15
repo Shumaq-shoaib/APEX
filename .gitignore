@@ -1,0 +1,12 @@
+/.obsidian
+/.vscode
+/.~lock.SRS APEX.docx#
+/SRS APEX.docx
+/SRS APEX.txt
+/backend.log
+/venv
+.env
+__pycache__/
+*.pyc
+.venv/
+ApexVenv/
