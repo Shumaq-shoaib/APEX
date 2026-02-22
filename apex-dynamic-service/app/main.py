@@ -1,12 +1,19 @@
 import sys
-import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
+from sqlalchemy import text
+from app.api import deps
+from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
+from sqlalchemy import text
+from app.api import deps
 from app.core import config
+from app.core.logging import setup_logging
 
-# -----------------------------------------------------------------------------
-# 1. Path Setup for Modules
-# -----------------------------------------------------------------------------
+# Initialize Logging
+setup_logging()
 import os
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -37,24 +44,25 @@ app = FastAPI(
 def create_tables():
     Base.metadata.create_all(bind=engine)
 
-@app.get("/")
-def read_root():
     return {
         "status": "online",
         "service": "APEX Dynamic Analysis Service",
         "message": "Visit /docs for API documentation"
     }
 
-@app.get("/health")
-def health_check():
-    return {"status": "ok"}
-
 # -----------------------------------------------------------------------------
 # 2. Middleware
 # -----------------------------------------------------------------------------
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from app.core.limiter import limiter
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=config.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -80,10 +88,30 @@ app.add_api_route(
 # -----------------------------------------------------------------------------
 # 4. Global Endpoints
 # -----------------------------------------------------------------------------
-@app.get("/health")
-def health_check():
+@app.get("/health", tags=["Health"])
+def health_check(db: Session = Depends(deps.get_db)):
+    # 1. Check Database
+    db_status = "unknown"
+    try:
+        # Simple query to check connection
+        db.execute(text("SELECT 1"))
+        db_status = "connected"
+    except Exception as e:
+        db_status = f"disconnected: {str(e)}"
+
+    # 2. Check Scanner
+    scanner_status = "available" if specs.SCANNER_AVAILABLE else "unavailable"
+
+    # 3. Determine Overall Status
+    overall_status = "healthy"
+    if db_status != "connected" or scanner_status != "available":
+        overall_status = "degraded"
+
     return {
-        "status": "ok", 
-        "service": "apex-dynamic-service", 
-        "scanner_available": specs.SCANNER_AVAILABLE
+        "status": overall_status,
+        "components": {
+            "database": db_status,
+            "scanner": scanner_status
+        },
+        "version": config.VERSION
     }

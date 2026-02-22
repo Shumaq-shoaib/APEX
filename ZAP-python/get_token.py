@@ -13,8 +13,13 @@ try:
         reg_url = "http://localhost:8888/identity/api/auth/signup"
         rand_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
         rand_phone = ''.join(random.choices(string.digits, k=10))
+        import os
+        
         email = f"zap_user_{rand_suffix}@example.com"
-        password = "ZapPassword123"
+        password = os.getenv("ZAP_USER_PASSWORD")
+        if not password:
+            print("ERROR: ZAP_USER_PASSWORD env var is required")
+            exit(1)
         
         reg_data = {
             "email": email,

@@ -6,11 +6,13 @@ services:
   # ------------------------------------------------------------
   backend:
     build:
-      context: ./apex-dynamic-service
+      context: .
+      dockerfile: ./apex-dynamic-service/Dockerfile
     container_name: apex-backend
-    # ports: <-- key removed completely
+    ports:
+      - "8000:8000"
     environment:
-      - DATABASE_URL=mysql+mysqlconnector://apex:apex@127.0.0.1:3306/apex_db
+      - DATABASE_URL=mysql+mysqlconnector://apex:apex@db:3306/apex_db
       - STATIC_ANALYSIS_PATH=/static_analysis
     depends_on:
       - db
@@ -19,9 +21,11 @@ services:
       - ./static_analysis:/static_analysis
       # Mount Dynamic Service code (including alembic) for hot-reload & persistence
       - ./apex-dynamic-service:/app
-    # networks:
-    #   - apex-net
-    network_mode: "host"
+    networks:
+      - apex-net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
 
   # ------------------------------------------------------------
   # 2. Frontend Dashboard (React + Vite)
@@ -41,6 +45,23 @@ services:
       - ./frontend/dashboard:/app
       # Do not overwrite container node_modules with host's (which might be empty or wrong arch)
       - /app/node_modules
+    networks:
+      - apex-net
+
+  # ------------------------------------------------------------
+  # 2b. Frontend Dashboard (Production Build)
+  # ------------------------------------------------------------
+  # usage: docker-compose --profile prod up frontend-prod
+  frontend-prod:
+    profiles: ["prod"]
+    build:
+      context: ./frontend/dashboard
+      dockerfile: Dockerfile.prod
+    container_name: apex-frontend-prod
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
     networks:
       - apex-net
 

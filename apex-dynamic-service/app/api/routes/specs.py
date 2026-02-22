@@ -11,6 +11,8 @@ from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, s
 from sqlalchemy.orm import Session
 from app.api import deps
 from app.models.dynamic import StaticSpec
+from fastapi import Request
+from app.core.limiter import limiter
 
 # Try importing Backend Logic
 try:
@@ -26,6 +28,7 @@ except ImportError:
 router = APIRouter()
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
+@limiter.limit("2/minute")
 async def upload_and_analyze_spec(
     file: UploadFile = File(...),
     profile: str = Form("default"),
@@ -33,7 +36,8 @@ async def upload_and_analyze_spec(
     generate_blueprint: str = Form("true"), # Default true now since we persist it
     policy_pack: UploadFile = File(None),
     spectral_in: UploadFile = File(None),
-    db: Session = Depends(deps.get_db)
+    db: Session = Depends(deps.get_db),
+    request: Request = None 
 ):
     """
     Upload an OpenAPI file, run Static Analysis, generate a Blueprint, and Persist the Spec.
@@ -42,10 +46,29 @@ async def upload_and_analyze_spec(
     if not SCANNER_AVAILABLE:
         raise HTTPException(status_code=500, detail="Static Scanner module not found.")
 
-    # 1. Save uploaded file temporarily
-    suffix = os.path.splitext(file.filename)[1]
+    # 0. Validate File Extension
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in [".json", ".yaml", ".yml"]:
+        raise HTTPException(status_code=400, detail="Invalid file type. Only .json, .yaml, .yml are allowed.")
+
+    # 1. Save uploaded file temporarily & Validate Size
+    MAX_FILE_SIZE = 10 * 1024 * 1024 # 10MB
+    suffix = ext
+    
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        shutil.copyfileobj(file.file, tmp)
+        # Copy and count bytes to avoid filling disk with massive files
+        size = 0
+        CHUNK_SIZE = 1024 * 1024 # 1MB chunks
+        while True:
+            chunk = await file.read(CHUNK_SIZE)
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > MAX_FILE_SIZE:
+                tmp.close()
+                os.unlink(tmp.name)
+                raise HTTPException(status_code=400, detail="File too large. Max size is 10MB.")
+            tmp.write(chunk)
         tmp_path = tmp.name
 
     policy_path = None
@@ -175,9 +198,21 @@ async def upload_and_analyze_spec(
         return transformed_summary
 
     except Exception as e:
-        import traceback
-        logging.error(f"Analysis error: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+        # Standardized Error Handling
+        # Ensure we don't leak internals to client, but log full trace
+        try:
+            logging.error(f"Analysis error: {traceback.format_exc()}")
+        except:
+            pass # Fallback if logging fails
+            
+        raise HTTPException(
+            status_code=500, 
+            detail={
+                "error": "Analysis Execution Failed",
+                "message": "An internal error occurred while processing the specification. Please check server logs.",
+                "code": "INTERNAL_ANALYSIS_ERROR"
+            }
+        )
         
     finally:
         if os.path.exists(tmp_path): os.unlink(tmp_path)
@@ -244,6 +279,7 @@ def get_spec_details(spec_id: str, db: Session = Depends(deps.get_db)):
     if latest_session:
         details["dynamic_session_id"] = latest_session.id
         
+    details["spec_id"] = spec_id
     return details
 
 @router.delete("/{spec_id}", status_code=status.HTTP_204_NO_CONTENT)

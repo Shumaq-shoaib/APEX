@@ -1,22 +1,34 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator, HttpUrl
 import json
+import os
 from datetime import datetime
 
 from app.api import deps
 from app.models.dynamic import DynamicTestSession, SessionStatus, StaticSpec
 from app.services.orchestrator import SessionOrchestrator
 from app.services.direct_parser import DirectOASParser
+from fastapi import Request
+from app.core.limiter import limiter
 
 router = APIRouter()
 
 # Pydantic Schemas
 class SessionCreate(BaseModel):
     spec_id: str
-    target_url: str
+    target_url: HttpUrl
     auth_token: Optional[str] = None
+
+    # Removed manual field_validator for target_url as HttpUrl handles it
+    
+    @field_validator('auth_token')
+    @classmethod
+    def validate_token_length(cls, v: str) -> str:
+        if v and len(v) > 10000: # Max 10KB token
+             raise ValueError('Auth token is too large')
+        return v
 
 class FindingResponse(BaseModel):
     id: str
@@ -51,10 +63,12 @@ class SessionResponse(BaseModel):
     test_cases: List[TestCaseResponse] = []
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 @router.post("/", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("10/minute")
 def create_session(
+    request: Request,
     payload: SessionCreate, 
     db: Session = Depends(deps.get_db)
 ):
@@ -63,7 +77,8 @@ def create_session(
     """
     orch = SessionOrchestrator(db)
     try:
-        session = orch.create_session(payload.spec_id, payload.target_url, payload.auth_token)
+        # Pydantic HttpUrl needs to be converted to str for logic
+        session = orch.create_session(payload.spec_id, str(payload.target_url), payload.auth_token)
         return session
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -72,7 +87,9 @@ def create_session(
         raise HTTPException(status_code=404, detail=str(e))
 
 @router.post("/direct", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("2/minute")
 async def create_direct_session(
+    request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     target_url: str = Form(...),
@@ -83,8 +100,28 @@ async def create_direct_session(
     """
     Directly start a dynamic scan from an OpenAPI file (Bypassing Static Audit).
     """
-    # 1. Parse content
+    # -1. Validate Inputs
+    try:
+        from pydantic import TypeAdapter, HttpUrl
+        TypeAdapter(HttpUrl).validate_python(target_url)
+    except Exception:
+         # Fallback or specific error if Pydantic fails, but we rely on it
+        raise HTTPException(status_code=400, detail="Invalid URL. Must be a valid HTTP/HTTPS URL.")
+    
+    if auth_token and len(auth_token) > 10000:
+        raise HTTPException(status_code=400, detail="Auth token is too large")
+
+    # 0. Validate Extension
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in [".json", ".yaml", ".yml"]:
+        raise HTTPException(status_code=400, detail="Invalid file type. Only .json, .yaml, .yml are allowed.")
+
+    # 1. Parse content & Validate Size
+    MAX_FILE_SIZE = 10 * 1024 * 1024 # 10MB
     content = await file.read()
+    
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="File too large. Max size is 10MB.")
     try:
         parser = DirectOASParser(content, file.filename)
         blueprint = parser.generate_blueprint()
@@ -137,7 +174,9 @@ async def create_direct_session(
     return session
 
 @router.post("/{session_id}/start", status_code=status.HTTP_202_ACCEPTED)
+@limiter.limit("10/minute")
 async def start_session(
+    request: Request,
     session_id: str, 
     background_tasks: BackgroundTasks,
     db: Session = Depends(deps.get_db)

@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { FileText, Shield, Upload, Zap, Lock } from "lucide-react";
+import { FileText, Shield, Upload, Zap, Lock, AlertTriangle } from "lucide-react";
+import { API_BASE_URL } from "@/lib/config";
 
 interface NewScanSelectorProps {
     onScanComplete: (specId: string) => void;
@@ -33,12 +34,12 @@ export default function NewScanSelector({ onScanComplete }: NewScanSelectorProps
             formData.append("profile", "default");
             formData.append("fail_on", "none");
 
-            const res = await fetch("http://127.0.0.1:8000/api/specs", { method: "POST", body: formData });
+            const res = await fetch(`${API_BASE_URL}/api/specs`, { method: "POST", body: formData });
             if (!res.ok) throw new Error("Static Scan failed");
             const data = await res.json();
             onScanComplete(data.spec_id);
-        } catch (e: any) {
-            setError(e.message);
+        } catch (e: unknown) {
+            setError(e instanceof Error ? e.message : "Static scan failed");
         } finally {
             setLoading(false);
         }
@@ -55,12 +56,12 @@ export default function NewScanSelector({ onScanComplete }: NewScanSelectorProps
             if (authToken) formData.append("auth_token", authToken);
             if (authSecondary) formData.append("auth_token_secondary", authSecondary);
 
-            const res = await fetch("http://127.0.0.1:8000/api/sessions/direct", { method: "POST", body: formData });
+            const res = await fetch(`${API_BASE_URL}/api/sessions/direct`, { method: "POST", body: formData });
             if (!res.ok) throw new Error("Dynamic Scan failed to launch");
             const data = await res.json();
             onScanComplete(data.spec_id); // Direct scan creates a spec wrapper
-        } catch (e: any) {
-            setError(e.message);
+        } catch (e: unknown) {
+            setError(e instanceof Error ? e.message : "Dynamic scan failed to launch");
         } finally {
             setLoading(false);
         }

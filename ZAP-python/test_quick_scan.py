@@ -7,8 +7,17 @@ from core.engine import AttackEngine
 from core.parser import SpecParser
 
 # Test with a single endpoint to verify payloads work
-target = "http://localhost:8888"
-token = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ6YXBfdXNlcl90b2UyMXhAZXhhbXBsZS5jb20iLCJpYXQiOjE3Njk1NDI1NzMsImV4cCI6MTc3MDE0NzM3Mywicm9sZSI6InVzZXIifQ.Tlk_wZ8osFHHOKQPNT8KbQuc0-pSgugX4B30Pvl2JOu08jugUD2XBcWqXL1cGlCT0KZEUGW7aWb7BzAPxYdZXP6lLFyEqaxO2378xyfzNT0AFtAgeojaAOeadkbM4aDed_1xfm-KenmTKxUPjpqQOiJfBXVcZ1qb9ZaYjDrl15mXyDzi7ImX4rhPQo4Shr78xbBrF0lUDK8XBBRq-hu0tYTGGNg5UDVr-WrOI31GfkD98ap3_PxZae8ApNmopaDqwm17gSQOxB7iWs2fS_psD60B7anGeAyLCLARKm_KLUijmnpoxO3E2O7OQFNQw8HN_zOVIBrGY32Pi7t_2r89VA"
+import os
+
+# Test with a single endpoint to verify payloads work
+target = os.getenv("TARGET_URL", "http://localhost:8888")
+token = os.getenv("ZAP_AUTH_TOKEN")
+
+if not token:
+    print("WARNING: ZAP_AUTH_TOKEN not set. Authenticated scans may fail.")
+    print("Run 'python ZAP-python/get_token.py' to generate one.")
+    # Fallback to empty or exit? Let's verify context handles None gracefully or warn.
+    pass
 
 print("=" * 60)
 print("QUICK SCAN TEST - Phase 2 Scanners")

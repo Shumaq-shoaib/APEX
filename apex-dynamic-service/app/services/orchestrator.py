@@ -9,8 +9,9 @@ from app.models.dynamic import (
     SessionStatus, CaseStatus, CheckType
 )
 from app.services.engine import AttackEngine
+from app.core.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class SessionOrchestrator:
     def __init__(self, db: Session):
@@ -34,17 +35,19 @@ class SessionOrchestrator:
         return session
 
     async def run_scan_background(self, session_id: str):
-        logger.info(f"Starting Scan Session {session_id}")
+        logger.info("Scan Initiated", event="scan_initiated", session_id=session_id)
         
         session = self.db.query(DynamicTestSession).filter(DynamicTestSession.id == session_id).first()
         if not session:
-            logger.error(f"Session {session_id} not found during execution")
+            logger.error("Session Not Found", event="scan_error", session_id=session_id, error="Session ID not found in DB")
             return
 
         try:
             session.status = SessionStatus.RUNNING
             session.started_at = datetime.utcnow()
             self.db.commit()
+            
+            logger.info("Scan Running", event="scan_running", session_id=session_id)
 
             spec = session.spec
             if not spec.blueprint_json:
@@ -65,13 +68,16 @@ class SessionOrchestrator:
             # 1. Static Verification
             for ep_data in static_endpoints:
                 path = ep_data.get("path")
+                method_from_path = "GET"
                 if " " in path:
-                    _, path = path.split(" ", 1)
+                    method_from_path, path = path.split(" ", 1)
+                    method_from_path = method_from_path.upper()
 
                 vulns = ep_data.get("vulnerabilities", [])
                 for v in vulns:
                     rule_id = v.get("id")
-                    method = v.get("method", "GET").upper()
+                    # Use method from path if not in vulnerability details
+                    method = v.get("method", method_from_path).upper()
                     
                     check_type = None
                     if "auth" in rule_id or "security" in rule_id:
@@ -148,7 +154,7 @@ class SessionOrchestrator:
                 DynamicTestCase.status == CaseStatus.QUEUED
             ).all()
 
-            logger.info(f"Generated {len(cases)} test cases. Starting execution...")
+            logger.info("Test Generation Completed", event="test_generation", count=len(cases))
 
             for case in cases:
                 try:
@@ -165,10 +171,12 @@ class SessionOrchestrator:
             session.status = SessionStatus.COMPLETED
             session.finished_at = datetime.utcnow()
             self.db.commit()
-            logger.info(f"Scan Session {session_id} COMPLETED")
+            
+            duration = (session.finished_at - session.started_at).total_seconds()
+            logger.info("Scan Completed", event="scan_completed", session_id=session_id, duration_seconds=duration)
 
         except Exception as e:
-            logger.error(f"Fatal error in SessionOrchestrator: {e}")
+            logger.error("Scan Failed", event="scan_failed", session_id=session_id, error=str(e))
             session.status = SessionStatus.FAILED
             session.finished_at = datetime.utcnow()
             self.db.commit()

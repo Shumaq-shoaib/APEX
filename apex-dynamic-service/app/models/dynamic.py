@@ -2,7 +2,7 @@ import uuid
 import enum
 from datetime import datetime
 from sqlalchemy import Column, String, Float, Text, DateTime, ForeignKey, CHAR, Enum as SqlEnum
-# Removed LONGTEXT for SQLite compatibility
+from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import relationship
 from app.db.base_class import Base
 
@@ -17,6 +17,7 @@ class CaseStatus(str, enum.Enum):
     QUEUED = "QUEUED"
     EXECUTED = "EXECUTED"
     SKIPPED = "SKIPPED"
+    FAILED = "FAILED"
 
 class CheckType(str, enum.Enum):
     BOLA = "BOLA"
@@ -46,8 +47,8 @@ class StaticSpec(Base):
     upload_date = Column(DateTime, default=datetime.utcnow)
     
     # Large JSON blobs - Use LONGTEXT (4GB) instead of TEXT (64KB)
-    blueprint_json = Column(Text, nullable=True) 
-    scan_details_json = Column(Text, nullable=True) # Full static report
+    blueprint_json = Column(LONGTEXT, nullable=True) 
+    scan_details_json = Column(LONGTEXT, nullable=True) # Full static report
 
     # Relationships
     sessions = relationship("DynamicTestSession", back_populates="spec")
