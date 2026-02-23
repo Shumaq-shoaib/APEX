@@ -1,4 +1,3 @@
-version: '3.8'
 
 services:
   # ------------------------------------------------------------
@@ -15,12 +14,15 @@ services:
       - DATABASE_URL=mysql+mysqlconnector://apex:apex@db:3306/apex_db
       - STATIC_ANALYSIS_PATH=/static_analysis
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     volumes:
       # Mount Static Analysis source for scanning
       - ./static_analysis:/static_analysis
       # Mount Dynamic Service code (including alembic) for hot-reload & persistence
       - ./apex-dynamic-service:/app
+      # Mount ZAP-python dynamic scanners
+      - ./ZAP-python:/ZAP-python
     networks:
       - apex-net
     extra_hosts:
@@ -78,6 +80,11 @@ services:
       MYSQL_PASSWORD: apex
     ports:
       - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     networks:
       - apex-net
     volumes:

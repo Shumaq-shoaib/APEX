@@ -4,7 +4,7 @@ import DashboardLayout from "@/components/layout/DashboardLayout";
 
 export default function DynamicAnalysis() {
     const location = useLocation();
-    const state = location.state as { specId?: string; targetUrl?: string } | null;
+    const state = location.state as { specId?: string; targetUrl?: string; sessionId?: string } | null;
 
     return (
         <DashboardLayout>
@@ -20,6 +20,7 @@ export default function DynamicAnalysis() {
                     <DynamicConsole
                         specId={state?.specId || ""}
                         defaultTargetUrl={state?.targetUrl || "http://localhost:8888"}
+                        initialSessionId={state?.sessionId}
                     />
                 </div>
             </div>

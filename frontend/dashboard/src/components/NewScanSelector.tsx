@@ -9,9 +9,10 @@ import { API_BASE_URL } from "@/lib/config";
 
 interface NewScanSelectorProps {
     onScanComplete: (specId: string) => void;
+    onDynamicScanStarted?: (sessionId: string, specId: string) => void;
 }
 
-export default function NewScanSelector({ onScanComplete }: NewScanSelectorProps) {
+export default function NewScanSelector({ onScanComplete, onDynamicScanStarted }: NewScanSelectorProps) {
     const [mode, setMode] = useState<"static" | "dynamic">("static");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -59,7 +60,12 @@ export default function NewScanSelector({ onScanComplete }: NewScanSelectorProps
             const res = await fetch(`${API_BASE_URL}/api/sessions/direct`, { method: "POST", body: formData });
             if (!res.ok) throw new Error("Dynamic Scan failed to launch");
             const data = await res.json();
-            onScanComplete(data.spec_id); // Direct scan creates a spec wrapper
+            // Navigate to the dynamic console with the pre-created session
+            if (onDynamicScanStarted) {
+                onDynamicScanStarted(data.id, data.spec_id);
+            } else {
+                onScanComplete(data.spec_id);
+            }
         } catch (e: unknown) {
             setError(e instanceof Error ? e.message : "Dynamic scan failed to launch");
         } finally {

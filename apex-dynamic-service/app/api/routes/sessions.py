@@ -83,9 +83,6 @@ def create_session(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
 @router.post("/direct", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("2/minute")
 async def create_direct_session(
@@ -209,11 +206,12 @@ async def start_session(
 # Helper for Background Task with fresh DB session
 from app.db.session import SessionLocal
 
-async def run_scan_wrapper(session_id: str):
+def run_scan_wrapper(session_id: str):
     db = SessionLocal()
     try:
         orch = SessionOrchestrator(db)
-        await orch.run_scan_background(session_id)
+        import asyncio
+        asyncio.run(orch.run_scan_background(session_id))
     finally:
         db.close()
 

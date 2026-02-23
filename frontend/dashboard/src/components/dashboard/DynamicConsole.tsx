@@ -15,9 +15,10 @@ import { DynamicSession, TestCase, Finding } from "@/types/api";
 interface DynamicConsoleProps {
     specId: string;
     defaultTargetUrl: string;
+    initialSessionId?: string;
 }
 
-export default function DynamicConsole({ specId, defaultTargetUrl }: DynamicConsoleProps) {
+export default function DynamicConsole({ specId, defaultTargetUrl, initialSessionId }: DynamicConsoleProps) {
     // State
     const [targetUrl, setTargetUrl] = useState(defaultTargetUrl);
     const [authToken, setAuthToken] = useState("");
@@ -25,11 +26,11 @@ export default function DynamicConsole({ specId, defaultTargetUrl }: DynamicCons
     const [error, setError] = useState<string | null>(null);
 
     // Session State
-    const [dynamicSessionId, setDynamicSessionId] = useState<string | null>(null);
-    const [dynamicStatus, setDynamicStatus] = useState<DynamicSession['status'] | null>(null);
+    const [dynamicSessionId, setDynamicSessionId] = useState<string | null>(initialSessionId || null);
+    const [dynamicStatus, setDynamicStatus] = useState<DynamicSession['status'] | null>(initialSessionId ? "RUNNING" : null);
     const [testCases, setTestCases] = useState<TestCase[]>([]);
     const [dynamicFindings, setDynamicFindings] = useState<Finding[]>([]);
-    const [polling, setPolling] = useState(false);
+    const [polling, setPolling] = useState(!!initialSessionId);
     const [selectedCase, setSelectedCase] = useState<TestCase | null>(null);
 
     // Poll Dynamic Session

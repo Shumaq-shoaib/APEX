@@ -48,6 +48,16 @@ export default function StaticAnalysis() {
         }
     };
 
+    const handleDynamicScanStarted = (sessionId: string, specId: string) => {
+        navigate("/dynamic", {
+            state: {
+                specId,
+                sessionId,
+                targetUrl: "http://localhost:8888"
+            }
+        });
+    };
+
     return (
         <DashboardLayout>
             <div className="space-y-6">
@@ -59,7 +69,10 @@ export default function StaticAnalysis() {
                 </div>
 
                 {!analysisData ? (
-                    <NewScanSelector onScanComplete={handleScanComplete} />
+                    <NewScanSelector
+                        onScanComplete={handleScanComplete}
+                        onDynamicScanStarted={handleDynamicScanStarted}
+                    />
                 ) : (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-700">
                         <div className="flex items-center justify-between bg-card p-4 rounded-lg border shadow-sm">

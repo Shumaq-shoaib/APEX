@@ -23,7 +23,8 @@ if static_analysis_src not in sys.path:
     sys.path.append(static_analysis_src)
 
 # Add ZAP-python to path for dynamic scanning modules
-zap_python_path = os.path.join(project_root, "ZAP-python")
+# In Docker, ZAP-python is mounted at /ZAP-python; locally it's relative to project root
+zap_python_path = "/ZAP-python" if os.path.isdir("/ZAP-python") else os.path.join(project_root, "ZAP-python")
 if zap_python_path not in sys.path:
     sys.path.append(zap_python_path)
 
