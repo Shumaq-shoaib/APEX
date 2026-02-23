@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status, UploadFile, File, Form
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, subqueryload
 from typing import List, Optional
 from pydantic import BaseModel, field_validator, HttpUrl
 import json
@@ -7,7 +7,7 @@ import os
 from datetime import datetime
 
 from app.api import deps
-from app.models.dynamic import DynamicTestSession, SessionStatus, StaticSpec
+from app.models.dynamic import DynamicTestSession, DynamicFinding, SessionStatus, StaticSpec
 from app.services.orchestrator import SessionOrchestrator
 from app.services.direct_parser import DirectOASParser
 from fastapi import Request
@@ -30,6 +30,12 @@ class SessionCreate(BaseModel):
              raise ValueError('Auth token is too large')
         return v
 
+class EvidenceResponse(BaseModel):
+    request_dump: Optional[str] = None
+    response_dump: Optional[str] = None
+    class Config:
+        from_attributes = True
+
 class FindingResponse(BaseModel):
     id: str
     test_case_id: Optional[str] = None
@@ -39,8 +45,11 @@ class FindingResponse(BaseModel):
     cvss_score: float = 0.0
     remediation: Optional[str] = None
     check_type: str
+    endpoint_path: Optional[str] = None
+    method: Optional[str] = None
+    evidence: Optional[EvidenceResponse] = None
     class Config:
-        from_attributes = True # V2 compat
+        from_attributes = True
 
 class TestCaseResponse(BaseModel):
     id: str
@@ -58,7 +67,7 @@ class SessionResponse(BaseModel):
     spec_id: str
     target_base_url: str
     status: SessionStatus
-    created_at: str = None
+    error_message: Optional[str] = None
     findings: List[FindingResponse] = []
     test_cases: List[TestCaseResponse] = []
 
@@ -170,6 +179,62 @@ async def create_direct_session(
     
     return session
 
+class QuickScanCreate(BaseModel):
+    target_url: HttpUrl
+    auth_token: Optional[str] = None
+    auth_token_secondary: Optional[str] = None
+
+@router.post("/quick", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("5/minute")
+async def create_quick_session(
+    request: Request,
+    payload: QuickScanCreate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(deps.get_db)
+):
+    """
+    Start a dynamic scan with only a target URL (no spec file required).
+    Generates a minimal placeholder spec so the orchestrator can run heuristic discovery.
+    """
+    from urllib.parse import urlparse
+    parsed = urlparse(str(payload.target_url))
+    host_label = parsed.hostname or "target"
+
+    empty_blueprint = {"endpoints": [], "info": {"title": f"Quick Scan: {host_label}"}}
+    minimal_details = {
+        "metadata": {
+            "api_title": f"Quick Scan: {host_label}",
+            "api_version": "1.0",
+            "file_analyzed": "none (URL-only scan)",
+            "timestamp_utc": datetime.utcnow().isoformat(),
+            "profile_used": "quick",
+            "server_url": str(payload.target_url)
+        },
+        "summary": {"total": 0, "Critical": 0, "High": 0, "Medium": 0, "Low": 0, "Informational": 0},
+        "endpoints": []
+    }
+
+    spec = StaticSpec(
+        filename=f"Quick Scan: {host_label}",
+        blueprint_json=json.dumps(empty_blueprint),
+        scan_details_json=json.dumps(minimal_details)
+    )
+    db.add(spec)
+    db.commit()
+    db.refresh(spec)
+
+    orch = SessionOrchestrator(db)
+    session = orch.create_session(
+        spec_id=spec.id,
+        target_url=str(payload.target_url),
+        auth_token=payload.auth_token,
+        auth_token_secondary=payload.auth_token_secondary
+    )
+
+    background_tasks.add_task(run_scan_wrapper, session.id)
+    return session
+
+
 @router.post("/{session_id}/start", status_code=status.HTTP_202_ACCEPTED)
 @limiter.limit("10/minute")
 async def start_session(
@@ -219,9 +284,49 @@ def run_scan_wrapper(session_id: str):
 @router.get("/{session_id}", response_model=SessionResponse)
 def get_session(session_id: str, db: Session = Depends(deps.get_db)):
     """
-    Get session status.
+    Get session status with findings, evidence, and test cases eagerly loaded.
     """
-    session = db.query(DynamicTestSession).filter(DynamicTestSession.id == session_id).first()
+    session = db.query(DynamicTestSession).options(
+        subqueryload(DynamicTestSession.findings).joinedload(DynamicFinding.evidence),
+        subqueryload(DynamicTestSession.test_cases)
+    ).filter(DynamicTestSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     return session
+
+
+@router.get("/{session_id}/report")
+def get_report(session_id: str, format: str = "html", db: Session = Depends(deps.get_db)):
+    """
+    Generate and download a scan report as HTML or PDF.
+    """
+    from fastapi.responses import Response
+    from app.services.report_generator import generate_html_report, generate_pdf_report
+
+    session = db.query(DynamicTestSession).options(
+        subqueryload(DynamicTestSession.findings).joinedload(DynamicFinding.evidence),
+        subqueryload(DynamicTestSession.test_cases)
+    ).filter(DynamicTestSession.id == session_id).first()
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if session.status not in (SessionStatus.COMPLETED, SessionStatus.FAILED):
+        raise HTTPException(status_code=400, detail="Report is only available for completed or failed scans.")
+
+    filename_base = f"apex_report_{session_id[:8]}"
+
+    if format == "pdf":
+        pdf_bytes = generate_pdf_report(session)
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename_base}.pdf"'}
+        )
+
+    html_content = generate_html_report(session)
+    return Response(
+        content=html_content,
+        media_type="text/html",
+        headers={"Content-Disposition": f'attachment; filename="{filename_base}.html"'}
+    )

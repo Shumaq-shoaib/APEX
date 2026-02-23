@@ -67,6 +67,7 @@ class DynamicTestSession(Base):
     started_at = Column(DateTime, default=datetime.utcnow)
     finished_at = Column(DateTime, nullable=True)
     initiated_by = Column(String(100), default="admin")
+    error_message = Column(Text, nullable=True)
 
     # Relationships
     test_cases = relationship("DynamicTestCase", back_populates="session", cascade="all, delete-orphan")
@@ -78,8 +79,8 @@ class DynamicTestCase(Base):
     id = Column(CHAR(36), primary_key=True, default=generate_uuid)
     session_id = Column(CHAR(36), ForeignKey("dynamic_test_session.id"), nullable=False)
     
-    endpoint_path = Column(String(255), nullable=False)
-    method = Column(String(10), nullable=False)
+    endpoint_path = Column(String(512), nullable=False)
+    method = Column(String(50), nullable=False)
     check_type = Column(SqlEnum(CheckType), nullable=False)
     
     # Enhanced Fields for Phase 6b
@@ -97,8 +98,8 @@ class DynamicFinding(Base):
     session_id = Column(CHAR(36), ForeignKey("dynamic_test_session.id"), nullable=False)
     test_case_id = Column(CHAR(36), ForeignKey("dynamic_test_case.id"), nullable=True) # Link to Source Case
     
-    endpoint_path = Column(String(255), nullable=False)
-    method = Column(String(10), nullable=False)
+    endpoint_path = Column(String(512), nullable=False)
+    method = Column(String(50), nullable=False)
     check_type = Column(SqlEnum(CheckType), nullable=False)
     
     severity = Column(SqlEnum(Severity), nullable=False)

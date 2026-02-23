@@ -53,11 +53,9 @@ class CommandInjectionScanner(BaseScanner):
         all_payloads.extend([(p, 'PowerShell') for p in PayloadLibrary.POWERSHELL_CMD_PAYLOADS])
         
         for payload, os_type in all_payloads:
-            # Check for Time-Based indicators in payload (heuristic)
             is_time_based = 'sleep' in payload or 'timeout' in payload
             
             try:
-                # Construct Request
                 test_url = target
                 test_params = {}
                 
@@ -66,37 +64,35 @@ class CommandInjectionScanner(BaseScanner):
                 elif param_type == 'path':
                     test_url = test_url.replace(f"{{{param_name}}}", payload)
                 
-                # Measure Time
                 start_time = time.time()
                 timeout_val = 15 if is_time_based else 5
                 
-                res = HttpUtils.send_request(method, test_url, headers=headers, params=test_params, timeout=timeout_val)
+                res, record = HttpUtils.send_request_recorded(method, test_url, headers=headers, params=test_params, timeout=timeout_val)
                 elapsed = time.time() - start_time
                 
-                # Analysis
                 if is_time_based:
-                    # 5 second delay is the standard in our payloads
                     if elapsed >= 5: 
                          self.add_finding(
                              title=f"Blind Command Injection ({os_type} - Time Based)",
                              description=f"The application responded in {elapsed:.2f}s, consistent with the injected time delay.",
                              severity="Critical",
-                             evidence=f"Param: {param_name}\nPayload: {payload}\nResponse Time: {elapsed:.2f}s"
+                             evidence=f"Param: {param_name}\nPayload: {payload}\nResponse Time: {elapsed:.2f}s",
+                             request_dump=record.format_request_dump(),
+                             response_dump=record.format_response_dump()
                          )
-                         return # Stop after finding critical
+                         return
                 else:
-                    # Content Based
                     matched_pattern = DetectionUtils.check_content_patterns(res.text, DetectionUtils.CMD_INJECTION_PATTERNS)
                     if matched_pattern:
                         self.add_finding(
                              title=f"OS Command Injection ({os_type})",
                              description=f"The application returned output execution results detected by pattern: {matched_pattern}",
                              severity="Critical",
-                             evidence=f"Param: {param_name}\nPayload: {payload}\nMatched Pattern: {matched_pattern}\nSnippet: {res.text[:100]}"
+                             evidence=f"Param: {param_name}\nPayload: {payload}\nMatched Pattern: {matched_pattern}\nSnippet: {res.text[:100]}",
+                             request_dump=record.format_request_dump(),
+                             response_dump=record.format_response_dump()
                          )
                         return
 
             except Exception as e:
-                # If time-based and we timed out (and exception is timeout), that might also be a hit if timeout < payload delay
-                # But here we set timeout > payload delay.
                 logger.debug(f"Cmd Inj failed for {param_name} with {payload}: {e}")

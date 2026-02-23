@@ -41,7 +41,7 @@ export default function ScanResults({ analysisData }: ScanResultsProps) {
                 <TabsContent value="dynamic" className="mt-0 focus-visible:outline-none">
                     <DynamicConsole
                         specId={analysisData.spec_id}
-                        defaultTargetUrl={analysisData.metadata?.server_url || "http://localhost:8888"}
+                        defaultTargetUrl={analysisData.metadata?.server_url || "http://host.docker.internal:8888"}
                     />
                 </TabsContent>
 

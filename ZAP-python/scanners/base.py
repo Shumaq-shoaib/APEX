@@ -47,13 +47,16 @@ class BaseScanner(ABC):
         """
         pass
 
-    def add_finding(self, title: str, description: str, severity: str, evidence: str = ""):
-        """Helper to append a finding"""
+    def add_finding(self, title: str, description: str, severity: str, evidence: str = "",
+                    request_dump: str = "", response_dump: str = ""):
+        """Helper to append a finding with optional HTTP evidence dumps."""
         self.results.append({
             "scanner_id": self.scan_id,
             "title": title,
             "description": description,
             "severity": severity,
             "evidence": evidence,
-            "category": self.category
+            "category": self.category,
+            "request_dump": request_dump,
+            "response_dump": response_dump
         })

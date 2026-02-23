@@ -48,16 +48,6 @@ export default function StaticAnalysis() {
         }
     };
 
-    const handleDynamicScanStarted = (sessionId: string, specId: string) => {
-        navigate("/dynamic", {
-            state: {
-                specId,
-                sessionId,
-                targetUrl: "http://localhost:8888"
-            }
-        });
-    };
-
     return (
         <DashboardLayout>
             <div className="space-y-6">
@@ -71,7 +61,6 @@ export default function StaticAnalysis() {
                 {!analysisData ? (
                     <NewScanSelector
                         onScanComplete={handleScanComplete}
-                        onDynamicScanStarted={handleDynamicScanStarted}
                     />
                 ) : (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-700">
@@ -86,7 +75,7 @@ export default function StaticAnalysis() {
                                 <span className="text-muted-foreground text-sm">{analysisData.metadata?.timestamp_utc}</span>
                             </div>
                             <Button onClick={handleVerifyDynamic} className="bg-primary text-primary-foreground hover:bg-primary/90">
-                                Verify with Dynamic Scan
+                                Continue to Dynamic Analysis
                                 <ArrowRight className="ml-2 h-4 w-4" />
                             </Button>
                         </div>

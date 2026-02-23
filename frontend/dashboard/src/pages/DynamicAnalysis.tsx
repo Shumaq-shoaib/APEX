@@ -8,18 +8,18 @@ export default function DynamicAnalysis() {
 
     return (
         <DashboardLayout>
-            <div className="space-y-6 h-full flex flex-col">
-                <div>
+            <div className="h-full flex flex-col overflow-hidden">
+                <div className="shrink-0 mb-4">
                     <h1 className="text-3xl font-bold tracking-tight mb-2">Dynamic Analysis</h1>
                     <p className="text-muted-foreground">
-                        Verify static findings by running active probes against a live target.
+                        Launch active security probes against a running API to discover real vulnerabilities.
                     </p>
                 </div>
 
-                <div className="flex-1">
+                <div className="flex-1 min-h-0">
                     <DynamicConsole
-                        specId={state?.specId || ""}
-                        defaultTargetUrl={state?.targetUrl || "http://localhost:8888"}
+                        specId={state?.specId || undefined}
+                        defaultTargetUrl={state?.targetUrl || "http://host.docker.internal:8888"}
                         initialSessionId={state?.sessionId}
                     />
                 </div>

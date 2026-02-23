@@ -106,12 +106,14 @@ class JwtScanner(BaseScanner):
         attack_headers = orig_headers.copy()
         attack_headers["Authorization"] = f"Bearer {attack_token}"
 
-        res = HttpUtils.send_request(method, url, headers=attack_headers, json=body, timeout=5)
+        res, record = HttpUtils.send_request_recorded(method, url, headers=attack_headers, json=body, timeout=5)
 
         if res.status_code in [200, 201, 202]:
              self.add_finding(
                 title=title,
                 description=description,
                 severity="Critical",
-                evidence=f"Token Used: {attack_token}\nResponse Code: {res.status_code}"
+                evidence=f"Token Used: {attack_token}\nResponse Code: {res.status_code}",
+                request_dump=record.format_request_dump(),
+                response_dump=record.format_response_dump()
             )

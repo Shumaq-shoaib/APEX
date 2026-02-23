@@ -111,43 +111,48 @@ class AttackEngine:
             self.db.commit()
             return
 
+        total_findings_count = 0
         for scanner in relevant_scanners:
-            # Update scanner context for this run
             scanner.context = zap_context
             scanner.results = []
             
-            scanner_msg = f"--- Running Scanner: {scanner.name} [{scanner.scan_id}] ---\n"
+            scanner_msg = f"[{datetime.utcnow().strftime('%H:%M:%S')}] --- Running Scanner: {scanner.name} [{scanner.scan_id}] ---\n"
             test_case.logs = (test_case.logs or "") + scanner_msg
             self.db.commit()
 
             try:
-                # Run sync scanner in a thread to keep async loop alive
-                # Passing full endpoint metadata for improved accuracy
+                log_handler = _TestCaseLogHandler(test_case, self.db)
+                scanner_logger = logging.getLogger(f"scanners.{scanner.scan_id.lower().replace('-', '_')}")
+                scanner_logger.addHandler(log_handler)
+
                 findings = await asyncio.to_thread(
                     scanner.run, 
                     test_case.endpoint_path, 
                     method, 
                     endpoint_meta
                 )
+
+                scanner_logger.removeHandler(log_handler)
                 
                 if findings:
                     for f in findings:
                         self._report_zap_finding(test_case, f)
-                        test_case.logs += f"[VULNERABILITY FOUND] {f['title']}\n"
+                        sev = f.get('severity', 'Info')
+                        test_case.logs += f"  [!] VULNERABILITY: {f['title']} (Severity: {sev})\n"
+                        total_findings_count += 1
                 
-                test_case.logs += f"Scanner {scanner.scan_id} finished. Findings: {len(findings)}\n"
+                test_case.logs += f"  Scanner {scanner.name}: {len(findings)} finding(s)\n"
             except Exception as e:
-                err_msg = f"Error in scanner {scanner.scan_id}: {str(e)}\n"
+                err_msg = f"  [ERROR] Scanner {scanner.scan_id}: {str(e)}\n"
                 test_case.logs += err_msg
                 logger.error(err_msg.strip())
 
         test_case.status = CaseStatus.EXECUTED
-        test_case.logs += f"[{datetime.utcnow().time()}] All ZAP scans for case finished.\n"
+        test_case.logs += f"[{datetime.utcnow().strftime('%H:%M:%S')}] Completed — {total_findings_count} vulnerability(ies) found.\n"
         self.db.commit()
 
     def _report_zap_finding(self, case: DynamicTestCase, zap_finding: dict):
         """Map ZAP-python finding to APEX DynamicFinding model."""
-        # Map Severities
         sev_map = {
             "Critical": Severity.CRITICAL,
             "High": Severity.HIGH,
@@ -176,14 +181,36 @@ class AttackEngine:
         self.db.commit()
         self.db.refresh(finding)
 
-        if zap_finding.get('evidence'):
+        request_dump = zap_finding.get('request_dump', '')
+        response_dump = zap_finding.get('response_dump', '')
+
+        if not request_dump and not response_dump and zap_finding.get('evidence'):
+            response_dump = str(zap_finding['evidence'])
+
+        if request_dump or response_dump:
             evidence = DynamicEvidence(
                 finding_id=finding.id,
-                request_dump="See logs for payload details",
-                response_dump=str(zap_finding.get('evidence'))
+                request_dump=request_dump or None,
+                response_dump=response_dump or None
             )
             self.db.add(evidence)
             self.db.commit()
 
     async def close(self):
         pass
+
+
+class _TestCaseLogHandler(logging.Handler):
+    """Captures scanner log output and appends it to the test case logs column."""
+    def __init__(self, test_case: DynamicTestCase, db: Session):
+        super().__init__(level=logging.DEBUG)
+        self.test_case = test_case
+        self.db = db
+
+    def emit(self, record: logging.LogRecord):
+        try:
+            msg = self.format(record)
+            self.test_case.logs = (self.test_case.logs or "") + f"  {msg}\n"
+            self.db.commit()
+        except Exception:
+            pass

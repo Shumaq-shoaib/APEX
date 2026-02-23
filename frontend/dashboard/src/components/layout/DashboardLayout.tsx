@@ -61,11 +61,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
                 {/* Main Content Area */}
                 <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 custom-scrollbar bg-background/50">
-                    <div className="mx-auto max-w-7xl animate-in fade-in slide-in-from-bottom-4 duration-500 min-h-[calc(100vh-8rem)]">
+                    <div className="mx-auto max-w-7xl animate-in fade-in slide-in-from-bottom-4 duration-500">
                         {children}
                     </div>
-                    {/* Footer */}
-                    <footer className="border-t py-6 md:py-8 mt-auto">
+                    <footer className="border-t py-6 md:py-8 mt-8">
                         <div className="container flex flex-col items-center justify-between gap-4 md:h-10 md:flex-row px-4 text-center mx-auto">
                             <p className="text-sm text-muted-foreground">
                                 &copy; {new Date().getFullYear()} APEX Security. Open Source API Security Testing.

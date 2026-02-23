@@ -84,101 +84,78 @@ class SsrfScanner(BaseScanner):
         if method not in ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']:
             return
 
-        # 1. Query Parameters
-        # Always try to inject into query params even if not explicitly in spec (common for 'url' param)
-        # But here we stick to what SpecParser found plus common ones if we wanted fuzzing.
         if param_list:
             for param in param_list:
                 if param.get('in') == 'query':
                     param_name = param.get('name')
                     try:
-                        res = HttpUtils.send_request(method, url, headers=headers, params={param_name: payload}, timeout=5)
-                        self._analyze_response(res, payload, regex_list, vuln_title, param_name, "Query")
+                        res, record = HttpUtils.send_request_recorded(method, url, headers=headers, params={param_name: payload}, timeout=5)
+                        self._analyze_response(res, payload, regex_list, vuln_title, param_name, "Query", record)
                     except Exception as e:
                         logger.debug(f"SSRF Query Inj failed for {param_name}: {e}")
 
-        # 2. JSON Body Injection
         if method in ['POST', 'PUT', 'PATCH'] and (body_schema or example_body):
-            # Generate a base valid body
-            # PRIORITY: Use Example if available (guarantees logic validation pass)
             base_body = {}
             if example_body and isinstance(example_body, dict):
                 base_body = example_body.copy()
-                # If using example_body, we iterate its keys for injection points.
-                # We don't need 'properties' from schema for iteration if example is dict.
             elif body_schema:
-                # Fallback to schema generation if no example_body
                 properties = body_schema.get('properties', {})
                 for k, v in properties.items():
-                    # Fill with dummy data
                     if v.get('type') == 'integer': base_body[k] = 123
                     else: base_body[k] = "test"
             else:
-                return # No body to inject into
+                return
 
-            # Now iterate and inject
-            # Simplification: We blindly inject into every string value in the base_body.
             for k, v in base_body.items():
-                if isinstance(v, str): # Only inject into strings
+                if isinstance(v, str):
                     test_body = base_body.copy()
                     test_body[k] = payload
                     
                     try:
-                        res = HttpUtils.send_request(method, url, headers=headers, json=test_body, timeout=5)
-                        self._analyze_response(res, payload, regex_list, vuln_title, k, "Body")
+                        res, record = HttpUtils.send_request_recorded(method, url, headers=headers, json=test_body, timeout=5)
+                        self._analyze_response(res, payload, regex_list, vuln_title, k, "Body", record)
                     except Exception as e:
                         logger.debug(f"SSRF Body Inj failed for {k}: {e}")
 
-    def _analyze_response(self, res, payload, regex_list, vuln_title, param_name, context):
+    def _analyze_response(self, res, payload, regex_list, vuln_title, param_name, context, record=None):
         """
         Analyzes response for success indicators.
         """
-        # 1. Content Regex Check (Strong - for Reflected/Full Read SSRF)
+        req_dump = record.format_request_dump() if record else ""
+        res_dump = record.format_response_dump() if record else ""
+
         for regex in regex_list:
             if re.search(regex, res.text, re.IGNORECASE):
                 self.add_finding(
                     title=f"SSRF - {vuln_title}",
                     description=f"The application appears to have fetched an internal/external resource requested via the '{param_name}' parameter (Content Match).",
                     severity="Critical",
-                    evidence=f"Payload: {payload}\nMatched Regex: {regex}\nResponse Snippet: {res.text[:100]}"
+                    evidence=f"Payload: {payload}\nMatched Regex: {regex}\nResponse Snippet: {res.text[:100]}",
+                    request_dump=req_dump,
+                    response_dump=res_dump
                 )
                 return 
 
-        # 2. Heuristic: Port Scanning / Blind SSRF (Differential)
-        # If we injected a known 'Open' port (like the target's own port) and got a 200/500,
-        # but a known 'Closed' port (like 54321) gave a different status or significantly different time/error.
-        
-        # NOTE: This is simplified. Proper scanners do Open vs Closed baseline comparison.
-        # Here we assume:
-        # - Payload "localhost:8888" (Self) -> Should be Open.
-        # - Payload "localhost:9999" (Random) -> Should be Closed.
-        
         if "localhost" in payload or "127.0.0.1" in payload:
-             # Check for "Connection Refused" messages in valid 200 OKs (Application Level Error)
-             # Also cover crAPI's "Could not connect" message using centralized signatures.
              for err in DetectionUtils.SSRF_ERROR_SIGNATURES:
                  if err in res.text:
                      self.add_finding(
                         title=f"SSRF - Connection Attempt Failed",
                         description=f"The application revealed a connection error when trying to access an internal port, indicating it attempted the connection.",
                         severity="High",
-                        evidence=f"Payload: {payload}\nResponse content indicates connection failure (Blind SSRF): '{res.text[:100]}'"
+                        evidence=f"Payload: {payload}\nResponse content indicates connection failure (Blind SSRF): '{res.text[:100]}'",
+                        request_dump=req_dump,
+                        response_dump=res_dump
                      )
-                     return # Found it
-             
-             # Check for successful "Success" message when hitting itself (e.g. crAPI identity service)
-             # crAPI runs on 8888. 
-             # If we hit 8888 and get 200, but hit 9999 and get 500 -> SSRF.
-             # We rely on exceptions or different status codes.
-             
-             # Since this function only sees ONE response, we can't easily compare.
-             # BUT, if we catch a 200 OK for 'localhost:8888' where normally it expects a mechanic API...
-             # AND if we see "response_from_mechanic_api" (crAPI specific reflection)
+                     return
+
              if ":8888" in payload:
                   if res.status_code == 200 or "response_from_mechanic_api" in res.text:
                       self.add_finding(
                         title=f"SSRF - Internal Network Access",
                         description=f"The application returned a response indicating successful access to localhost:8888.",
                         severity="Critical",
-                        evidence=f"Payload: {payload}\nStatus: {res.status_code}\nContent Matched: response_from_mechanic_api or 200 OK"
+                        evidence=f"Payload: {payload}\nStatus: {res.status_code}\nContent Matched: response_from_mechanic_api or 200 OK",
+                        request_dump=req_dump,
+                        response_dump=res_dump
                      )

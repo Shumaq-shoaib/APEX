@@ -91,15 +91,11 @@ class ActiveIdorScanner(BaseScanner):
 
     def _test_idor(self, method, url, headers, param_name, test_id, context_label):
         try:
-            # Send Request
-            res = HttpUtils.send_request(method, url, headers=headers, timeout=5)
+            res, record = HttpUtils.send_request_recorded(method, url, headers=headers, timeout=5)
             
-            # Analysis Logic
             if res.status_code >= 200 and res.status_code < 300:
-                # Ignore empty responses for now to reduce noise
                 if len(res.text) < 5: return
 
-                # Check for sensitive keys in response (indicates success)
                 discovered_key = DetectionUtils.check_content_patterns(res.text, DetectionUtils.IDOR_SENSITIVE_KEYS)
                 enrichment = f"\nDiscovered sensitive key: {discovered_key}" if discovered_key else ""
 
@@ -107,7 +103,9 @@ class ActiveIdorScanner(BaseScanner):
                     title=f"Potential IDOR ({context_label})",
                     description=f"The endpoint returned a 2xx success code when accessing ID '{test_id}' via {context_label}. Verify authorization.{enrichment}",
                     severity="High",
-                    evidence=f"Method: {method}\nURL: {url}\nPayload: {test_id}\nStatus: {res.status_code}"
+                    evidence=f"Method: {method}\nURL: {url}\nPayload: {test_id}\nStatus: {res.status_code}",
+                    request_dump=record.format_request_dump(),
+                    response_dump=record.format_response_dump()
                 )
 
         except Exception as e:

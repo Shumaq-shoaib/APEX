@@ -156,14 +156,16 @@ class SqlInjectionScanner(BaseScanner):
             elif param_type == 'body':
                 test_json = payload
             
-            res = HttpUtils.send_request(method, test_url, headers=headers, params=test_params, json=test_json, timeout=delay + 5)
+            res, record = HttpUtils.send_request_recorded(method, test_url, headers=headers, params=test_params, json=test_json, timeout=delay + 5)
             elapsed = res.elapsed.total_seconds()
             if elapsed >= delay:
                 self.add_finding(
                     title=f"Blind SQL Injection ({db_type} - Time Based)",
                     description=f"The endpoint took {elapsed:.2f}s to respond, which is consistent with the injected sleep command ({delay}s).",
                     severity="Critical",
-                    evidence=f"Param: {param_name}\nPayload: {payload}\nResponse Time: {elapsed:.2f}s"
+                    evidence=f"Param: {param_name}\nPayload: {payload}\nResponse Time: {elapsed:.2f}s",
+                    request_dump=record.format_request_dump(),
+                    response_dump=record.format_response_dump()
                 )
         except Exception as e:
              import logging
@@ -182,7 +184,7 @@ class SqlInjectionScanner(BaseScanner):
             elif param_type == 'body':
                 test_json = injected_value
             
-            res = HttpUtils.send_request(method, test_url, headers=headers, params=test_params, json=test_json, timeout=5)
+            res, record = HttpUtils.send_request_recorded(method, test_url, headers=headers, params=test_params, json=test_json, timeout=5)
             
             if "NoSQL" in type_label:
                  matched_errors = DetectionUtils.check_error_patterns(res.text, {"MongoDB": DetectionUtils.DBMS_ERRORS["MongoDB"]})
@@ -195,7 +197,9 @@ class SqlInjectionScanner(BaseScanner):
                         title=f"{type_label} ({db})",
                         description=f"Possible {type_label} in parameter '{param_name}' detected via error message.",
                         severity="High",
-                        evidence=f"Param: {param_name}\nPayload: {injected_value}\nMatched Error in Response"
+                        evidence=f"Param: {param_name}\nPayload: {injected_value}\nMatched Error in Response",
+                        request_dump=record.format_request_dump(),
+                        response_dump=record.format_response_dump()
                     )
                     return 
 
@@ -205,7 +209,9 @@ class SqlInjectionScanner(BaseScanner):
                         title=f"{type_label} (Logic Bypass)",
                         description=f"The endpoint returned HTTP 200 OK for a NoSQL logic bypass payload. This suggests it accepted the query.",
                         severity="Critical",
-                        evidence=f"Param: {param_name}\nPayload: {injected_value}\nResponse Code: {res.status_code}"
+                        evidence=f"Param: {param_name}\nPayload: {injected_value}\nResponse Code: {res.status_code}",
+                        request_dump=record.format_request_dump(),
+                        response_dump=record.format_response_dump()
                     )
 
         except Exception as e:

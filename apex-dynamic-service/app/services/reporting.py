@@ -4,38 +4,55 @@ class ReportManager:
     """
     Centralized manager for scoring and remediation advice.
     """
-    
+
     @staticmethod
     def get_cvss_score(check_type: CheckType, severity: Severity) -> float:
         """
-        Returns a static CVSS v3.1 Base Score based on the finding type.
+        Returns a static CVSS v3.1 Base Score based on the finding type and severity.
         """
-        # Mapping based on typical impact
         if check_type == CheckType.BROKEN_AUTH:
             if severity == Severity.CRITICAL: return 9.8
             if severity == Severity.HIGH: return 8.1
             return 7.5
 
         if check_type == CheckType.BOLA:
-            if severity == Severity.HIGH: return 7.1 # AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:L/A:N
+            if severity == Severity.CRITICAL: return 8.6
+            if severity == Severity.HIGH: return 7.1
             return 6.5
-            
+
         if check_type == CheckType.DATA_EXPOSURE:
-            return 5.3 # AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N
+            if severity == Severity.HIGH: return 7.5
+            return 5.3
 
         if check_type == CheckType.SQLI:
             if severity == Severity.CRITICAL: return 9.8
-            return 8.1
+            if severity == Severity.HIGH: return 8.6
+            return 7.5
+
+        if check_type == CheckType.SSRF:
+            if severity == Severity.CRITICAL: return 9.1
+            if severity == Severity.HIGH: return 8.6
+            return 6.5
+
+        if check_type == CheckType.INJECTION:
+            if severity == Severity.CRITICAL: return 9.8
+            if severity == Severity.HIGH: return 8.1
+            return 7.2
 
         if check_type == CheckType.XSS:
+            if severity == Severity.HIGH: return 7.1
             return 6.1
 
         if check_type == CheckType.OTHER:
-            # Covers SSRF, XXE, Redirects
+            if severity == Severity.CRITICAL: return 9.1
             if severity == Severity.HIGH: return 8.5
             return 5.0
 
-        return 0.0
+        if severity == Severity.CRITICAL: return 9.0
+        if severity == Severity.HIGH: return 7.5
+        if severity == Severity.MEDIUM: return 5.0
+        if severity == Severity.LOW: return 3.5
+        return 2.0
 
     @staticmethod
     def get_remediation(check_type: CheckType) -> str:
@@ -48,7 +65,7 @@ class ReportManager:
                 "2. Validate Tokens: strict validation of JWT signatures and expiration.\n"
                 "3. Use Standard Libraries: Do not roll your own crypto."
             )
-        
+
         if check_type == CheckType.BOLA:
             return (
                 "1. Implement Ownership Checks: When accessing an object by ID, verify that the current user owns it.\n"
@@ -61,6 +78,20 @@ class ReportManager:
                 "1. Use Parameterized Queries: Always use prepared statements or ORM abstractions.\n"
                 "2. Input Validation: Validate all input against a strict allowlist.\n"
                 "3. Principle of Least Privilege: Ensure the database user has minimal permissions."
+            )
+
+        if check_type == CheckType.SSRF:
+            return (
+                "1. Allowlist: Restrict outbound requests to a strict allowlist of trusted hosts.\n"
+                "2. Deny Internal Networks: Block requests to private IP ranges (127.0.0.1, 10.x, 169.254.x, etc.).\n"
+                "3. Disable Redirects: Do not follow HTTP redirects on server-side requests."
+            )
+
+        if check_type == CheckType.INJECTION:
+            return (
+                "1. Input Validation: Validate and sanitize all user-controlled input.\n"
+                "2. Avoid Shell Execution: Never pass user input directly to OS commands.\n"
+                "3. Use Libraries: Use safe abstractions instead of raw command execution."
             )
 
         if check_type == CheckType.DATA_EXPOSURE:

@@ -32,12 +32,10 @@ class UsernameIdorScanner(BaseScanner):
         headers = self.context.get_headers()
         
         try:
-            # Prepare request (simplistic, no params for passive check on base resource)
-            res = HttpUtils.send_request(method, target, headers=headers, timeout=5)
+            res, record = HttpUtils.send_request_recorded(method, target, headers=headers, timeout=5)
             content = res.text
             
             for user in PayloadLibrary.IDOR_DEFAULT_USERS:
-                # Generate hashes
                 hashes = {
                     "MD5": hashlib.md5(user.encode()).hexdigest(),
                     "SHA1": hashlib.sha1(user.encode()).hexdigest(),
@@ -50,7 +48,9 @@ class UsernameIdorScanner(BaseScanner):
                             title=f"Username Hash Disclosure ({alg})",
                             description=f"The {alg} hash of the username '{user}' was found in the response.",
                             severity="Info",
-                            evidence=f"Hash: {hash_val}"
+                            evidence=f"Hash: {hash_val}",
+                            request_dump=record.format_request_dump(),
+                            response_dump=record.format_response_dump()
                         )
                         
         except Exception as e:

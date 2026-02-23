@@ -84,27 +84,25 @@ class MassAssignmentScanner(BaseScanner):
         base_json = initial_data if isinstance(initial_data, dict) else {}
 
         for param, value in self.SENSITIVE_PARAMS.items():
-            # Construct Malicious Payload
             payload = copy.deepcopy(base_json)
             payload[param] = value
             
             try:
-                # 2. Attack Request
-                res = HttpUtils.send_request(method, url, headers=headers, json=payload, timeout=5)
-                
-                # 3. Detection Logic
-                self._analyze_response(url, param, value, baseline_res, res)
+                res, record = HttpUtils.send_request_recorded(method, url, headers=headers, json=payload, timeout=5)
+                self._analyze_response(url, param, value, baseline_res, res, record)
 
             except Exception as e:
                 logger.debug(f"Mass Assignment: Attack failed for {url} param {param}: {e}")
 
         return self.results
 
-    def _analyze_response(self, url, param, value, baseline, attack_res):
+    def _analyze_response(self, url, param, value, baseline, attack_res, record=None):
         """
         Analyzes the attack response against the baseline.
         """
-        # A. Reflection Check: Is the injected parameter returned in the response?
+        req_dump = record.format_request_dump() if record else ""
+        res_dump = record.format_response_dump() if record else ""
+
         try:
             res_json = attack_res.json()
             if isinstance(res_json, dict):
@@ -113,21 +111,23 @@ class MassAssignmentScanner(BaseScanner):
                         title="Mass Assignment (Reflection)",
                         description=f"The injected parameter '{param}' was reflected in the response. This indicates the application might have bound the input to the internal object model.",
                         severity="High",
-                        evidence=f"Param: {param}\nValue: {value}\nResponse Snippet: {str(res_json)[:200]}"
+                        evidence=f"Param: {param}\nValue: {value}\nResponse Snippet: {str(res_json)[:200]}",
+                        request_dump=req_dump,
+                        response_dump=res_dump
                     )
                     return 
         except ValueError:
-            # Response is not valid JSON, cannot check for reflection
             pass
 
-        # B. Status Code Change
         if baseline.status_code != attack_res.status_code:
              if attack_res.status_code < 400 or (baseline.status_code >= 400 and attack_res.status_code < 400):
                 self.add_finding(
                     title="Mass Assignment (Status Anomaly)",
                     description=f"Injecting '{param}' caused a status code change from {baseline.status_code} to {attack_res.status_code}. Investigate for logic bypass.",
                     severity="Medium",
-                    evidence=f"Param: {param}\nBaseline Status: {baseline.status_code}\nAttack Status: {attack_res.status_code}"
+                    evidence=f"Param: {param}\nBaseline Status: {baseline.status_code}\nAttack Status: {attack_res.status_code}",
+                    request_dump=req_dump,
+                    response_dump=res_dump
                 )
         return
 

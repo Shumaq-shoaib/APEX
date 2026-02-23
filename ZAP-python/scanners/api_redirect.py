@@ -93,50 +93,53 @@ class ExternalRedirectScanner(BaseScanner):
                 # Ideally, we want `allow_redirects=False`. 
                 # Let's see if HttpUtils supports kwargs passing to requests. assume yes.
                 
-                res = HttpUtils.send_request(method, test_url, headers=headers, params=test_params, allow_redirects=False, timeout=5)
+                res, record = HttpUtils.send_request_recorded(method, test_url, headers=headers, params=test_params, allow_redirects=False, timeout=5)
                 
-                self._analyze_response(res, payload, param_name, compiled_patterns, scan_uuid)
+                self._analyze_response(res, payload, param_name, compiled_patterns, scan_uuid, record)
                 
             except Exception as e:
                 logger.debug(f"Redirect Scan failed for {param_name} with payload {payload}: {e}")
 
-    def _analyze_response(self, res, payload, param_name, patterns, scan_uuid):
+    def _analyze_response(self, res, payload, param_name, patterns, scan_uuid, record=None):
         """Analyze headers and body for redirect indicators."""
-        
-        # 1. check Headers (Location) - Status Code 300-399
+        req_dump = record.format_request_dump() if record else ""
+        res_dump = record.format_response_dump() if record else ""
+
         if 300 <= res.status_code < 400:
             loc = res.headers.get('Location', '')
-            if scan_uuid in loc: # Quick string check first
-                 # Verify with regex if needed, or just accept the UUID match since it's unique
+            if scan_uuid in loc:
                  self.add_finding(
                      title="Open Redirect (Header)",
                      description="The application redirects to an arbitrary external domain specified in the request parameter.",
                      severity="Medium",
-                     evidence=f"Param: {param_name}\nPayload: {payload}\nLocation Header: {loc}"
+                     evidence=f"Param: {param_name}\nPayload: {payload}\nLocation Header: {loc}",
+                     request_dump=req_dump,
+                     response_dump=res_dump
                  )
                  return
 
-        # 2. Check Body for Meta/JS (200 OK usually)
         if res.status_code == 200:
             content = res.text
             
-            # Check Meta Refresh
             if patterns['meta_refresh'].search(content):
                 self.add_finding(
                      title="Open Redirect (Meta Refresh)",
                      description="The application uses a Meta Refresh tag to redirect to an arbitrary external domain.",
                      severity="Medium",
-                     evidence=f"Param: {param_name}\nPayload: {payload}\nMatched Metadata in body."
+                     evidence=f"Param: {param_name}\nPayload: {payload}\nMatched Metadata in body.",
+                     request_dump=req_dump,
+                     response_dump=res_dump
                  )
                 return
 
-            # Check JS Redirects
             for key in ['js_location', 'js_assign', 'js_window']:
                 if patterns[key].search(content):
                      self.add_finding(
-                     title="Open Redirect (JavaScript)",
-                     description="The application uses JavaScript to redirect to an arbitrary external domain.",
-                     severity="Medium",
-                     evidence=f"Param: {param_name}\nPayload: {payload}\nMatched JS pattern: {key}"
-                 )
+                         title="Open Redirect (JavaScript)",
+                         description="The application uses JavaScript to redirect to an arbitrary external domain.",
+                         severity="Medium",
+                         evidence=f"Param: {param_name}\nPayload: {payload}\nMatched JS pattern: {key}",
+                         request_dump=req_dump,
+                         response_dump=res_dump
+                     )
                      return

@@ -62,6 +62,52 @@ class SessionOrchestrator:
             
             scan_details = json.loads(spec.scan_details_json or "{}")
             static_endpoints = scan_details.get("endpoints", [])
+
+            # --- API Discovery: if no endpoints from spec, run live discovery ---
+            if not endpoints:
+                logger.info("No endpoints in blueprint — launching API Discovery Engine")
+                discovery_case = DynamicTestCase(
+                    session_id=session.id,
+                    endpoint_path="/",
+                    method="GET",
+                    check_type=CheckType.OTHER,
+                    status=CaseStatus.QUEUED,
+                    logs="[APEX Discovery Engine]\n"
+                )
+                self.db.add(discovery_case)
+                self.db.commit()
+                self.db.refresh(discovery_case)
+
+                def _discovery_log(msg: str):
+                    discovery_case.logs = (discovery_case.logs or "") + f"{msg}\n"
+                    self.db.commit()
+
+                from app.services.discovery import DiscoveryEngine
+                discovery = DiscoveryEngine(session.target_base_url, session.auth_token)
+                result = await discovery.run(log_callback=_discovery_log)
+
+                if result.spec_blueprint:
+                    blueprint = result.spec_blueprint
+                    endpoints = blueprint.get("endpoints", [])
+                    _discovery_log(f"Spec-based discovery: {len(endpoints)} endpoints loaded")
+                elif result.endpoints:
+                    endpoints = result.endpoints
+                    blueprint["endpoints"] = endpoints
+                    _discovery_log(f"Active discovery: {len(endpoints)} endpoints found")
+                else:
+                    _discovery_log("No endpoints discovered — scan will have limited coverage")
+
+                spec.blueprint_json = json.dumps(blueprint)
+                self.db.commit()
+
+                discovery_case.status = CaseStatus.EXECUTED
+                stats = result.stats
+                discovery_case.logs += f"\n--- Discovery Summary ---\n"
+                discovery_case.logs += f"Probes sent: {stats.get('probes', 0)}\n"
+                discovery_case.logs += f"Time: {stats.get('elapsed_sec', 0):.1f}s\n"
+                discovery_case.logs += f"Endpoints: {len(endpoints)}\n"
+                discovery_case.logs += f"Method: {stats.get('method', 'unknown')}\n"
+                self.db.commit()
             
             queued_cases = set()
 
@@ -179,5 +225,29 @@ class SessionOrchestrator:
             logger.error("Scan Failed", event="scan_failed", session_id=session_id, error=str(e))
             session.status = SessionStatus.FAILED
             session.finished_at = datetime.utcnow()
+            session.error_message = self._classify_error(e)
             self.db.commit()
             raise
+
+    @staticmethod
+    def _classify_error(exc: Exception) -> str:
+        """Map exceptions to user-friendly error messages."""
+        import httpx
+
+        exc_str = str(exc).lower()
+
+        if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)):
+            return "Target URL is unreachable. Verify the API is running and the URL is correct."
+        if isinstance(exc, httpx.TimeoutException):
+            return "Connection to the target timed out. The server may be overloaded or unreachable."
+        if isinstance(exc, httpx.HTTPStatusError):
+            status = getattr(exc, 'response', None)
+            if status and status.status_code in (401, 403):
+                return "Authentication failed. The provided token may be invalid or expired."
+            return f"HTTP error from target: {exc}"
+        if "connection refused" in exc_str or "connect" in exc_str:
+            return "Target URL is unreachable — connection refused. Ensure the API server is running."
+        if "401" in exc_str or "403" in exc_str or "unauthorized" in exc_str:
+            return "Authentication token appears invalid or expired."
+
+        return f"Scan failed unexpectedly: {str(exc)[:300]}"

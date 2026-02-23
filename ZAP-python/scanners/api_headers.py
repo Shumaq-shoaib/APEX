@@ -26,10 +26,8 @@ class SecurityHeadersScanner(BaseScanner):
         headers = self.context.get_headers()
         
         try:
-            # We just need one request to check headers
-            response = HttpUtils.send_request(method, target, headers=headers, timeout=5)
+            response, record = HttpUtils.send_request_recorded(method, target, headers=headers, timeout=5)
             
-            # Check for standard headers
             required_headers = [
                 "Content-Security-Policy",
                 "X-Content-Type-Options",
@@ -42,7 +40,9 @@ class SecurityHeadersScanner(BaseScanner):
                         title=f"Missing {h} Header",
                         description=f"The response is missing the {h} security header.",
                         severity="Low",
-                        evidence=f"Headers received: {list(response.headers.keys())}"
+                        evidence=f"Headers received: {list(response.headers.keys())}",
+                        request_dump=record.format_request_dump(),
+                        response_dump=record.format_response_dump()
                     )
             
             return self.results

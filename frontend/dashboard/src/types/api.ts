@@ -46,11 +46,16 @@ export interface EndpointFindings {
     vulnerabilities: StaticVulnerability[];
 }
 
+export interface DynamicEvidence {
+    request_dump?: string;
+    response_dump?: string;
+}
+
 export interface Finding {
     id: string;
     title: string;
     description: string;
-    severity: "Critical" | "High" | "Medium" | "Low" | "Info";
+    severity: "Critical" | "High" | "Medium" | "Low" | "Info" | "Informational";
     category?: string;
     cwe?: string;
     remediation?: string;
@@ -58,6 +63,8 @@ export interface Finding {
     endpoint_path?: string;
     test_case_id?: string;
     cvss_score?: number | string;
+    check_type?: string;
+    evidence?: DynamicEvidence;
 }
 
 export interface AnalysisData {
@@ -73,6 +80,7 @@ export interface DynamicSession {
     status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
     test_cases: TestCase[];
     findings: Finding[];
+    error_message?: string;
 }
 
 export interface TestCase {
