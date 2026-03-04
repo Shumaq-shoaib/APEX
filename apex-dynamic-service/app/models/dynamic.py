@@ -28,6 +28,11 @@ class CheckType(str, enum.Enum):
     SSRF = "SSRF"
     INJECTION = "INJECTION"
     OTHER = "OTHER"
+    CORS = "CORS"
+    CSRF = "CSRF"
+    CRLF = "CRLF"
+    RATE_LIMIT = "RATE_LIMIT"
+    SSTI = "SSTI"
 
 class Severity(str, enum.Enum):
     CRITICAL = "Critical"

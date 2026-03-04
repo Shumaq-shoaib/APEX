@@ -8,6 +8,7 @@ services:
       context: .
       dockerfile: ./apex-dynamic-service/Dockerfile
     container_name: apex-backend
+    restart: always
     ports:
       - "8000:8000"
     environment:
@@ -21,8 +22,6 @@ services:
       - ./static_analysis:/static_analysis
       # Mount Dynamic Service code (including alembic) for hot-reload & persistence
       - ./apex-dynamic-service:/app
-      # Mount ZAP-python dynamic scanners
-      - ./ZAP-python:/ZAP-python
     networks:
       - apex-net
     extra_hosts:

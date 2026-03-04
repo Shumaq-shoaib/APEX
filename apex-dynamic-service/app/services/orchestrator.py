@@ -180,14 +180,44 @@ class SessionOrchestrator:
                          ))
                          queued_cases.add(key)
 
-                # Logic 3: SQLi / SSRF / Injection (Heuristic)
+                # Logic 3: Parameter-based Checks (SQLi, SSRF, CmdInj, SSTI, XSS)
                 if ep.get("params") or ep.get("schema"):
-                    for ct in [CheckType.SQLI, CheckType.SSRF, CheckType.INJECTION]:
+                    for ct in [CheckType.SQLI, CheckType.SSRF, CheckType.INJECTION, CheckType.SSTI, CheckType.XSS]:
                         key = (path, method, ct)
                         if key not in queued_cases:
                             self.db.add(DynamicTestCase(
                                 session_id=session.id, endpoint_path=path, method=method,
                                 check_type=ct, status=CaseStatus.QUEUED
+                            ))
+                            queued_cases.add(key)
+
+                # Logic 4: Universal Checks (CORS, CRLF, Security Headers)
+                for ct in [CheckType.CORS, CheckType.CRLF, CheckType.OTHER]:
+                    key = (path, method, ct)
+                    if key not in queued_cases:
+                        self.db.add(DynamicTestCase(
+                            session_id=session.id, endpoint_path=path, method=method,
+                            check_type=ct, status=CaseStatus.QUEUED
+                        ))
+                        queued_cases.add(key)
+
+                # Logic 5: State-Changing Checks (CSRF, Rate Limit)
+                if method in ["POST", "PUT", "PATCH", "DELETE"]:
+                    key = (path, method, CheckType.CSRF)
+                    if key not in queued_cases:
+                        self.db.add(DynamicTestCase(
+                            session_id=session.id, endpoint_path=path, method=method,
+                            check_type=CheckType.CSRF, status=CaseStatus.QUEUED
+                        ))
+                        queued_cases.add(key)
+                        
+                    # Rate limiting only applies to sensitive flows
+                    if is_public and method in ["POST", "PUT"]:
+                        key = (path, method, CheckType.RATE_LIMIT)
+                        if key not in queued_cases:
+                            self.db.add(DynamicTestCase(
+                                session_id=session.id, endpoint_path=path, method=method,
+                                check_type=CheckType.RATE_LIMIT, status=CaseStatus.QUEUED
                             ))
                             queued_cases.add(key)
             

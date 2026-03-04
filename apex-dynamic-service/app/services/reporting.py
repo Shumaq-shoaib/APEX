@@ -43,6 +43,27 @@ class ReportManager:
             if severity == Severity.HIGH: return 7.1
             return 6.1
 
+        if check_type == CheckType.CORS:
+            if severity == Severity.HIGH: return 7.5
+            return 5.3
+
+        if check_type == CheckType.CSRF:
+            if severity == Severity.HIGH: return 8.0
+            return 6.5
+
+        if check_type == CheckType.CRLF:
+            if severity == Severity.HIGH: return 7.5
+            return 6.1
+
+        if check_type == CheckType.RATE_LIMIT:
+            if severity == Severity.HIGH: return 7.5
+            return 5.3
+
+        if check_type == CheckType.SSTI:
+            if severity == Severity.CRITICAL: return 9.8
+            if severity == Severity.HIGH: return 8.6
+            return 7.2
+
         if check_type == CheckType.OTHER:
             if severity == Severity.CRITICAL: return 9.1
             if severity == Severity.HIGH: return 8.5
@@ -99,6 +120,21 @@ class ReportManager:
 
         if check_type == CheckType.XSS:
             return "Sanitize all user-controlled input and use Content Security Policy (CSP) headers."
+
+        if check_type == CheckType.CORS:
+            return "1. Set Access-Control-Allow-Origin to specific trusted domains.\n2. Never reflect arbitrary Origins.\n3. Avoid Access-Control-Allow-Credentials with wildcard origins."
+
+        if check_type == CheckType.CSRF:
+            return "1. Implement anti-CSRF tokens on all state-changing endpoints.\n2. Use SameSite cookie attribute.\n3. Validate Content-Type headers."
+
+        if check_type == CheckType.CRLF:
+            return "1. Sanitize CR (\\r) and LF (\\n) characters from all user input.\n2. Use frameworks that auto-encode header values.\n3. Validate and reject input containing control characters."
+
+        if check_type == CheckType.RATE_LIMIT:
+            return "1. Implement rate limiting on authentication endpoints.\n2. Use CAPTCHA after repeated failures.\n3. Implement account lockout policies."
+
+        if check_type == CheckType.SSTI:
+            return "1. Never pass user input directly into template engines.\n2. Use sandboxed template environments.\n3. Prefer logic-less templates (Mustache) over full engines."
 
         if check_type == CheckType.OTHER:
             return "Review the endpoint logic for specific injection or configuration risks (SSRF, XXE, etc.)."
