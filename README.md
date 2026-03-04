@@ -1,4 +1,6 @@
-# APEX — API Penetration & Exploitation eXaminer
+# APEX — API Pentesting and Evaluation with Real-time eXamination  
+
+
 
 > A unified, full-stack API security testing platform that systematically attacks REST APIs using both static specification analysis and live dynamic attack simulation — purpose-built for OWASP API Security Top 10 (2023).
 
@@ -545,4 +547,4 @@ docker logs -f apex-backend
 
 ---
 
-*APEX — Final Year Project | API Security Research*
+*APEX — Final Year Project*
