@@ -54,13 +54,13 @@ The key insight: **the Blueprint is the bridge**. Static analysis understands th
 │              MODULE 1: STATIC ANALYSIS ENGINE                   │
 │                                                                 │
 │  ┌──────────────┐    ┌──────────────┐    ┌───────────────────┐  │
-│  │  OAS Parser  │───▶│  Rule Engine │───▶│ Blueprint Builder │  │
+│  │  OAS Parser  │───▶│  Rule Engine │──▶│ Blueprint Builder │  │
 │  │  (v6_refactor│    │  (rules.py)  │    │  (blueprint.py)   │  │
 │  │   /scanner.py│    │  70+ checks  │    │  Endpoint map     │  │
 │  └──────────────┘    └──────────────┘    └─────────┬─────────┘  │
-│                                                    │             │
-│  Output: Static findings + Structured Blueprint    │             │
-└────────────────────────────────────────────────────┼─────────────┘
+│                                                    │            │
+│  Output: Static findings + Structured Blueprint    │            │
+└────────────────────────────────────────────────────┼────────────┘
                                                      │
                                Blueprint (endpoints, params,
                                 methods, auth schemes)
@@ -70,16 +70,16 @@ The key insight: **the Blueprint is the bridge**. Static analysis understands th
 │              MODULE 2: DYNAMIC ATTACK ENGINE                    │
 │                                                                 │
 │  ┌──────────────────┐    ┌────────────────┐   ┌─────────────┐   │
-│  │ Session          │───▶│ Attack Engine  │──▶│ 17 Scanners │   │
+│  │ Session          │───▶│ Attack Engine  │──▶│ 17 Scanners│   │
 │  │ Orchestrator     │    │ (engine.py)    │   │ (see below) │   │
 │  │ (orchestrator.py)│    │                │   │             │   │
 │  └──────────────────┘    └────────────────┘   └──────┬──────┘   │
-│                                                       │          │
+│                                                      │          │
 │  Per endpoint: inject payloads, analyze responses,   │          │
 │  record evidence, generate findings                  │          │
-└───────────────────────────────────────────────────────┼──────────┘
-                                                        │
-                                                        ▼
+└──────────────────────────────────────────────────────┼──────────┘
+                                                       │
+                                                       ▼
                                            Findings + Evidence
                                           stored in MySQL DB
                                                         │
