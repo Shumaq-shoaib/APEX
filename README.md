@@ -1,4 +1,6 @@
-# APEX — API Penetration & Exploitation eXaminer
+# APEX — API Pentesting and Evaluation with Real-time eXamination  
+
+
 
 > A unified, full-stack API security testing platform that systematically attacks REST APIs using both static specification analysis and live dynamic attack simulation — purpose-built for OWASP API Security Top 10 (2023).
 
@@ -52,13 +54,13 @@ The key insight: **the Blueprint is the bridge**. Static analysis understands th
 │              MODULE 1: STATIC ANALYSIS ENGINE                   │
 │                                                                 │
 │  ┌──────────────┐    ┌──────────────┐    ┌───────────────────┐  │
-│  │  OAS Parser  │───▶│  Rule Engine │───▶│ Blueprint Builder │  │
+│  │  OAS Parser  │───▶│  Rule Engine │──▶│ Blueprint Builder │  │
 │  │  (v6_refactor│    │  (rules.py)  │    │  (blueprint.py)   │  │
 │  │   /scanner.py│    │  70+ checks  │    │  Endpoint map     │  │
 │  └──────────────┘    └──────────────┘    └─────────┬─────────┘  │
-│                                                    │             │
-│  Output: Static findings + Structured Blueprint    │             │
-└────────────────────────────────────────────────────┼─────────────┘
+│                                                    │            │
+│  Output: Static findings + Structured Blueprint    │            │
+└────────────────────────────────────────────────────┼────────────┘
                                                      │
                                Blueprint (endpoints, params,
                                 methods, auth schemes)
@@ -68,16 +70,16 @@ The key insight: **the Blueprint is the bridge**. Static analysis understands th
 │              MODULE 2: DYNAMIC ATTACK ENGINE                    │
 │                                                                 │
 │  ┌──────────────────┐    ┌────────────────┐   ┌─────────────┐   │
-│  │ Session          │───▶│ Attack Engine  │──▶│ 17 Scanners │   │
+│  │ Session          │───▶│ Attack Engine  │──▶│ 17 Scanners│   │
 │  │ Orchestrator     │    │ (engine.py)    │   │ (see below) │   │
 │  │ (orchestrator.py)│    │                │   │             │   │
 │  └──────────────────┘    └────────────────┘   └──────┬──────┘   │
-│                                                       │          │
+│                                                      │          │
 │  Per endpoint: inject payloads, analyze responses,   │          │
 │  record evidence, generate findings                  │          │
-└───────────────────────────────────────────────────────┼──────────┘
-                                                        │
-                                                        ▼
+└──────────────────────────────────────────────────────┼──────────┘
+                                                       │
+                                                       ▼
                                            Findings + Evidence
                                           stored in MySQL DB
                                                         │
@@ -545,4 +547,4 @@ docker logs -f apex-backend
 
 ---
 
-*APEX — Final Year Project | API Security Research*
+*APEX — Final Year Project*
