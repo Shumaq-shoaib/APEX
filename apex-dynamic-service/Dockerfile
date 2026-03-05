@@ -5,6 +5,8 @@ WORKDIR /app
 # Install system dependencies (needed for mysql client sometimes)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    libcairo2-dev \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

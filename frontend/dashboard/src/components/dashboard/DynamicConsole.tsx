@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import {
     Shield, Play, Terminal, Lock, Activity, Download, Upload,
     AlertTriangle, RotateCcw, ChevronDown, FileText,
-    ArrowUpDown, Search, X, Info, Wrench, CheckCircle2, Eye
+    ArrowUpDown, Search, X, Info, Wrench, CheckCircle2, Eye,
+    User, KeyRound, Settings2, Users
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,7 +44,15 @@ function normalizeSeverity(s: string): string {
 
 export default function DynamicConsole({ specId, defaultTargetUrl, initialSessionId }: DynamicConsoleProps) {
     const [targetUrl, setTargetUrl] = useState(defaultTargetUrl);
-    const [authToken, setAuthToken] = useState("");
+    const [authUsername, setAuthUsername] = useState("");
+    const [authPassword, setAuthPassword] = useState("");
+    const [authSecUsername, setAuthSecUsername] = useState("");
+    const [authSecPassword, setAuthSecPassword] = useState("");
+    const [authLoginEndpoint, setAuthLoginEndpoint] = useState("");
+    const [authUsernameField, setAuthUsernameField] = useState("");
+    const [authTokenPath, setAuthTokenPath] = useState("");
+    const [showAdvanced, setShowAdvanced] = useState(false);
+    const [showSecondary, setShowSecondary] = useState(false);
     const [specFile, setSpecFile] = useState<File | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -165,11 +174,21 @@ export default function DynamicConsole({ specId, defaultTargetUrl, initialSessio
 
             let sessionData: { id: string; spec_id: string };
 
+            const authPayload: Record<string, string | null> = {
+                auth_username: authUsername || null,
+                auth_password: authPassword || null,
+                auth_sec_username: authSecUsername || null,
+                auth_sec_password: authSecPassword || null,
+                auth_login_endpoint: authLoginEndpoint || null,
+                auth_username_field: authUsernameField || null,
+                auth_token_path: authTokenPath || null,
+            };
+
             if (specId) {
                 const res1 = await fetch(`${API_BASE_URL}/api/sessions/`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ spec_id: specId, target_url: targetUrl, auth_token: authToken || null })
+                    body: JSON.stringify({ spec_id: specId, target_url: targetUrl, ...authPayload })
                 });
                 if (!res1.ok) throw new Error("Failed to create session");
                 sessionData = await res1.json();
@@ -180,7 +199,13 @@ export default function DynamicConsole({ specId, defaultTargetUrl, initialSessio
                 const formData = new FormData();
                 formData.append("file", specFile);
                 formData.append("target_url", targetUrl);
-                if (authToken) formData.append("auth_token", authToken);
+                if (authUsername) formData.append("auth_username", authUsername);
+                if (authPassword) formData.append("auth_password", authPassword);
+                if (authSecUsername) formData.append("auth_sec_username", authSecUsername);
+                if (authSecPassword) formData.append("auth_sec_password", authSecPassword);
+                if (authLoginEndpoint) formData.append("auth_login_endpoint", authLoginEndpoint);
+                if (authUsernameField) formData.append("auth_username_field", authUsernameField);
+                if (authTokenPath) formData.append("auth_token_path", authTokenPath);
                 const res = await fetch(`${API_BASE_URL}/api/sessions/direct`, { method: "POST", body: formData });
                 if (!res.ok) throw new Error("Failed to launch scan with spec file");
                 sessionData = await res.json();
@@ -188,7 +213,7 @@ export default function DynamicConsole({ specId, defaultTargetUrl, initialSessio
                 const res = await fetch(`${API_BASE_URL}/api/sessions/quick`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ target_url: targetUrl, auth_token: authToken || null })
+                    body: JSON.stringify({ target_url: targetUrl, ...authPayload })
                 });
                 if (!res.ok) throw new Error("Failed to launch quick scan");
                 sessionData = await res.json();
@@ -255,17 +280,123 @@ export default function DynamicConsole({ specId, defaultTargetUrl, initialSessio
                             </p>
                         </div>
 
-                        <div className="space-y-2">
-                            <Label htmlFor="authToken" className="flex items-center gap-2">
-                                <Lock className="h-3 w-3" /> Authorization Token (Optional)
+                        {/* Primary Auth Credentials */}
+                        <div className="space-y-3 border rounded-lg p-4">
+                            <Label className="flex items-center gap-2 text-sm font-semibold">
+                                <User className="h-4 w-4" /> Authentication (Optional)
                             </Label>
-                            <Textarea
-                                id="authToken"
-                                value={authToken}
-                                onChange={(e) => setAuthToken(e.target.value)}
-                                placeholder="Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                                className="font-mono text-xs"
-                            />
+                            <p className="text-xs text-muted-foreground -mt-1">
+                                APEX will automatically log in, discover the token, and use it for scanning.
+                            </p>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                    <Label htmlFor="authUsername" className="text-xs">Username</Label>
+                                    <Input
+                                        id="authUsername"
+                                        value={authUsername}
+                                        onChange={(e) => setAuthUsername(e.target.value)}
+                                        placeholder="testuser"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <Label htmlFor="authPassword" className="text-xs">Password</Label>
+                                    <Input
+                                        id="authPassword"
+                                        type="password"
+                                        value={authPassword}
+                                        onChange={(e) => setAuthPassword(e.target.value)}
+                                        placeholder="••••••••"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Secondary Auth (BOLA) Toggle */}
+                        <div className="space-y-3">
+                            <button
+                                type="button"
+                                onClick={() => setShowSecondary(!showSecondary)}
+                                className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                                <Users className="h-3 w-3" />
+                                {showSecondary ? "Hide" : "Add"} Secondary User (for BOLA/IDOR Testing)
+                                <ChevronDown className={`h-3 w-3 transition-transform ${showSecondary ? "rotate-180" : ""}`} />
+                            </button>
+                            {showSecondary && (
+                                <div className="grid grid-cols-2 gap-3 border rounded-lg p-3 bg-muted/20">
+                                    <div className="space-y-1">
+                                        <Label htmlFor="authSecUsername" className="text-xs">Secondary Username</Label>
+                                        <Input
+                                            id="authSecUsername"
+                                            value={authSecUsername}
+                                            onChange={(e) => setAuthSecUsername(e.target.value)}
+                                            placeholder="victim_user"
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label htmlFor="authSecPassword" className="text-xs">Secondary Password</Label>
+                                        <Input
+                                            id="authSecPassword"
+                                            type="password"
+                                            value={authSecPassword}
+                                            onChange={(e) => setAuthSecPassword(e.target.value)}
+                                            placeholder="••••••••"
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Advanced Auth Settings */}
+                        <div className="space-y-3">
+                            <button
+                                type="button"
+                                onClick={() => setShowAdvanced(!showAdvanced)}
+                                className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                                <Settings2 className="h-3 w-3" />
+                                {showAdvanced ? "Hide" : "Show"} Advanced Auth Settings
+                                <ChevronDown className={`h-3 w-3 transition-transform ${showAdvanced ? "rotate-180" : ""}`} />
+                            </button>
+                            {showAdvanced && (
+                                <div className="space-y-3 border rounded-lg p-3 bg-muted/20">
+                                    <p className="text-xs text-muted-foreground">
+                                        Override these if APEX cannot automatically find the login endpoint or extract the token.
+                                    </p>
+                                    <div className="space-y-1">
+                                        <Label htmlFor="authLoginEndpoint" className="text-xs">Login Endpoint</Label>
+                                        <Input
+                                            id="authLoginEndpoint"
+                                            value={authLoginEndpoint}
+                                            onChange={(e) => setAuthLoginEndpoint(e.target.value)}
+                                            placeholder="/users/v1/login (auto-detected if empty)"
+                                            className="font-mono text-xs"
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="space-y-1">
+                                            <Label htmlFor="authUsernameField" className="text-xs">Username Field Name</Label>
+                                            <Input
+                                                id="authUsernameField"
+                                                value={authUsernameField}
+                                                onChange={(e) => setAuthUsernameField(e.target.value)}
+                                                placeholder='"username" (default)'
+                                                className="font-mono text-xs"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label htmlFor="authTokenPath" className="text-xs">Token JSON Path</Label>
+                                            <Input
+                                                id="authTokenPath"
+                                                value={authTokenPath}
+                                                onChange={(e) => setAuthTokenPath(e.target.value)}
+                                                placeholder='"auth_token" (auto-detected)'
+                                                className="font-mono text-xs"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         {!specId && (

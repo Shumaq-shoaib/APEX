@@ -15,20 +15,22 @@ from app.core.limiter import limiter
 
 router = APIRouter()
 
-# Pydantic Schemas
+# ─── Pydantic Schemas ──────────────────────────────────────────────────
+
 class SessionCreate(BaseModel):
     spec_id: str
     target_url: HttpUrl
-    auth_token: Optional[str] = None
 
-    # Removed manual field_validator for target_url as HttpUrl handles it
-    
-    @field_validator('auth_token')
-    @classmethod
-    def validate_token_length(cls, v: str) -> str:
-        if v and len(v) > 10000: # Max 10KB token
-             raise ValueError('Auth token is too large')
-        return v
+    # Automated Auth Credentials
+    auth_username: Optional[str] = None
+    auth_password: Optional[str] = None
+    auth_sec_username: Optional[str] = None
+    auth_sec_password: Optional[str] = None
+
+    # Advanced Overrides
+    auth_login_endpoint: Optional[str] = None
+    auth_username_field: Optional[str] = None
+    auth_token_path: Optional[str] = None
 
 class EvidenceResponse(BaseModel):
     request_dump: Optional[str] = None
@@ -74,6 +76,9 @@ class SessionResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+# ─── Route: Standard Session (from existing static spec) ──────────────
+
 @router.post("/", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("10/minute")
 def create_session(
@@ -83,14 +88,27 @@ def create_session(
 ):
     """
     Initialize a new Dynamic Analysis Session.
+    Accepts username/password credentials for automated authentication.
     """
     orch = SessionOrchestrator(db)
     try:
-        # Pydantic HttpUrl needs to be converted to str for logic
-        session = orch.create_session(payload.spec_id, str(payload.target_url), payload.auth_token)
+        session = orch.create_session(
+            spec_id=payload.spec_id,
+            target_url=str(payload.target_url),
+            auth_username=payload.auth_username,
+            auth_password=payload.auth_password,
+            auth_sec_username=payload.auth_sec_username,
+            auth_sec_password=payload.auth_sec_password,
+            auth_login_endpoint=payload.auth_login_endpoint,
+            auth_username_field=payload.auth_username_field,
+            auth_token_path=payload.auth_token_path,
+        )
         return session
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+# ─── Route: Direct Session (upload spec + start scan) ─────────────────
 
 @router.post("/direct", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("2/minute")
@@ -99,23 +117,25 @@ async def create_direct_session(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     target_url: str = Form(...),
-    auth_token: Optional[str] = Form(None),
-    auth_token_secondary: Optional[str] = Form(None),
+    auth_username: Optional[str] = Form(None),
+    auth_password: Optional[str] = Form(None),
+    auth_sec_username: Optional[str] = Form(None),
+    auth_sec_password: Optional[str] = Form(None),
+    auth_login_endpoint: Optional[str] = Form(None),
+    auth_username_field: Optional[str] = Form(None),
+    auth_token_path: Optional[str] = Form(None),
     db: Session = Depends(deps.get_db)
 ):
     """
     Directly start a dynamic scan from an OpenAPI file (Bypassing Static Audit).
+    Accepts username/password credentials for automated authentication.
     """
     # -1. Validate Inputs
     try:
         from pydantic import TypeAdapter, HttpUrl
         TypeAdapter(HttpUrl).validate_python(target_url)
     except Exception:
-         # Fallback or specific error if Pydantic fails, but we rely on it
         raise HTTPException(status_code=400, detail="Invalid URL. Must be a valid HTTP/HTTPS URL.")
-    
-    if auth_token and len(auth_token) > 10000:
-        raise HTTPException(status_code=400, detail="Auth token is too large")
 
     # 0. Validate Extension
     ext = os.path.splitext(file.filename)[1].lower()
@@ -135,7 +155,6 @@ async def create_direct_session(
         raise HTTPException(status_code=400, detail=f"Invalid OpenAPI Spec: {str(e)}")
 
     # 2. Create 'Virtual' Static Spec
-    # Must populate minimal structure to avoid frontend crashes
     minimal_details = {
         "metadata": {
             "api_title": "Direct Scan",
@@ -170,8 +189,13 @@ async def create_direct_session(
     session = orch.create_session(
         spec_id=spec.id,
         target_url=target_url,
-        auth_token=auth_token,
-        auth_token_secondary=auth_token_secondary
+        auth_username=auth_username,
+        auth_password=auth_password,
+        auth_sec_username=auth_sec_username,
+        auth_sec_password=auth_sec_password,
+        auth_login_endpoint=auth_login_endpoint,
+        auth_username_field=auth_username_field,
+        auth_token_path=auth_token_path,
     )
     
     # Auto-start
@@ -179,10 +203,18 @@ async def create_direct_session(
     
     return session
 
+
+# ─── Route: Quick Scan (URL only, no spec) ────────────────────────────
+
 class QuickScanCreate(BaseModel):
     target_url: HttpUrl
-    auth_token: Optional[str] = None
-    auth_token_secondary: Optional[str] = None
+    auth_username: Optional[str] = None
+    auth_password: Optional[str] = None
+    auth_sec_username: Optional[str] = None
+    auth_sec_password: Optional[str] = None
+    auth_login_endpoint: Optional[str] = None
+    auth_username_field: Optional[str] = None
+    auth_token_path: Optional[str] = None
 
 @router.post("/quick", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("5/minute")
@@ -227,13 +259,20 @@ async def create_quick_session(
     session = orch.create_session(
         spec_id=spec.id,
         target_url=str(payload.target_url),
-        auth_token=payload.auth_token,
-        auth_token_secondary=payload.auth_token_secondary
+        auth_username=payload.auth_username,
+        auth_password=payload.auth_password,
+        auth_sec_username=payload.auth_sec_username,
+        auth_sec_password=payload.auth_sec_password,
+        auth_login_endpoint=payload.auth_login_endpoint,
+        auth_username_field=payload.auth_username_field,
+        auth_token_path=payload.auth_token_path,
     )
 
     background_tasks.add_task(run_scan_wrapper, session.id)
     return session
 
+
+# ─── Route: Start a PENDING Session ───────────────────────────────────
 
 @router.post("/{session_id}/start", status_code=status.HTTP_202_ACCEPTED)
 @limiter.limit("10/minute")
@@ -246,7 +285,6 @@ async def start_session(
     """
     Start the scan execution in the background.
     """
-    # Verify session exists first
     session = db.query(DynamicTestSession).filter(DynamicTestSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -254,21 +292,12 @@ async def start_session(
     if session.status != SessionStatus.PENDING:
         raise HTTPException(status_code=400, detail=f"Session is in {session.status} state, cannot start.")
 
-    # Run in background
-    # Note: We need to instantiate Orchestrator with a DB session that is thread-safe or created within the task.
-    # Passing the request-scoped 'db' to background task is risky because it might be closed.
-    # STARTING A NEW DB SESSION INSIDE THE TASK IS BETTER. 
-    # But for now, let's rely on the simple injection, if it fails we fix it.
-    # Actually, preventing 'Session is closed' error:
-    # We will pass the ID and let the Orchestrator create its own session? 
-    # No, Orchestrator takes `db`. 
-    # Let's update `start_session` to NOT pass `orch.run_scan_background` directly if `db` is closed.
-    # Better: Use a wrapper function that creates a new SessionLocal.
-    
     background_tasks.add_task(run_scan_wrapper, session_id)
     return {"message": "Scan started in background", "session_id": session_id}
 
-# Helper for Background Task with fresh DB session
+
+# ─── Background Task Helper ──────────────────────────────────────────
+
 from app.db.session import SessionLocal
 
 def run_scan_wrapper(session_id: str):
@@ -280,6 +309,8 @@ def run_scan_wrapper(session_id: str):
     finally:
         db.close()
 
+
+# ─── Route: Get Session Status ────────────────────────────────────────
 
 @router.get("/{session_id}", response_model=SessionResponse)
 def get_session(session_id: str, db: Session = Depends(deps.get_db)):
@@ -294,6 +325,8 @@ def get_session(session_id: str, db: Session = Depends(deps.get_db)):
         raise HTTPException(status_code=404, detail="Session not found")
     return session
 
+
+# ─── Route: Generate Report ──────────────────────────────────────────
 
 @router.get("/{session_id}/report")
 def get_report(session_id: str, format: str = "html", db: Session = Depends(deps.get_db)):

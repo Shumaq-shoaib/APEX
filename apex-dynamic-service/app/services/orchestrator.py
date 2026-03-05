@@ -2,6 +2,7 @@ import logging
 import asyncio
 import json
 from datetime import datetime
+from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models.dynamic import (
@@ -9,6 +10,7 @@ from app.models.dynamic import (
     SessionStatus, CaseStatus, CheckType
 )
 from app.services.engine import AttackEngine
+from app.services.auth_engine import AuthEngine, AuthEngineError
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -17,7 +19,18 @@ class SessionOrchestrator:
     def __init__(self, db: Session):
         self.db = db
 
-    def create_session(self, spec_id: str, target_url: str, auth_token: str = None, auth_token_secondary: str = None) -> DynamicTestSession:
+    def create_session(
+        self,
+        spec_id: str,
+        target_url: str,
+        auth_username: Optional[str] = None,
+        auth_password: Optional[str] = None,
+        auth_sec_username: Optional[str] = None,
+        auth_sec_password: Optional[str] = None,
+        auth_login_endpoint: Optional[str] = None,
+        auth_username_field: Optional[str] = None,
+        auth_token_path: Optional[str] = None,
+    ) -> DynamicTestSession:
         spec = self.db.query(StaticSpec).filter(StaticSpec.id == spec_id).first()
         if not spec:
             raise ValueError("Spec not found")
@@ -25,8 +38,13 @@ class SessionOrchestrator:
         session = DynamicTestSession(
             spec_id=spec_id,
             target_base_url=target_url,
-            auth_token=auth_token,
-            auth_token_secondary=auth_token_secondary,
+            auth_username=auth_username,
+            auth_password=auth_password,
+            auth_sec_username=auth_sec_username,
+            auth_sec_password=auth_sec_password,
+            auth_login_endpoint=auth_login_endpoint,
+            auth_username_field=auth_username_field or "username",
+            auth_token_path=auth_token_path,
             status=SessionStatus.PENDING
         )
         self.db.add(session)
@@ -58,6 +76,47 @@ class SessionOrchestrator:
                 return
 
             blueprint = json.loads(spec.blueprint_json)
+
+            # ─── Automated Authentication ───────────────────────────
+            if session.auth_username and session.auth_password:
+                try:
+                    auth_engine = AuthEngine(session.target_base_url, blueprint)
+                    primary_token = auth_engine.fetch_token(
+                        username=session.auth_username,
+                        password=session.auth_password,
+                        login_endpoint=session.auth_login_endpoint,
+                        username_field=session.auth_username_field or "username",
+                        token_path=session.auth_token_path,
+                    )
+                    session.auth_token = primary_token
+                    logger.info("Primary token acquired via AuthEngine", event="auth_primary_ok")
+                except AuthEngineError as e:
+                    logger.error(f"AuthEngine failed for primary user: {e}", event="auth_primary_fail")
+                    session.error_message = f"Auto-login failed (primary): {e}"
+                    session.status = SessionStatus.FAILED
+                    session.finished_at = datetime.utcnow()
+                    self.db.commit()
+                    return
+
+            if session.auth_sec_username and session.auth_sec_password:
+                try:
+                    auth_engine = AuthEngine(session.target_base_url, blueprint)
+                    secondary_token = auth_engine.fetch_token(
+                        username=session.auth_sec_username,
+                        password=session.auth_sec_password,
+                        login_endpoint=session.auth_login_endpoint,
+                        username_field=session.auth_username_field or "username",
+                        token_path=session.auth_token_path,
+                    )
+                    session.auth_token_secondary = secondary_token
+                    logger.info("Secondary token acquired via AuthEngine", event="auth_secondary_ok")
+                except AuthEngineError as e:
+                    logger.warning(f"AuthEngine failed for secondary user: {e}", event="auth_secondary_fail")
+                    # Non-fatal — BOLA scanning will just be limited
+
+            self.db.commit()
+            # ────────────────────────────────────────────────────────
+
             endpoints = blueprint.get("endpoints", [])
             
             scan_details = json.loads(spec.scan_details_json or "{}")

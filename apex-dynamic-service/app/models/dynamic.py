@@ -65,8 +65,20 @@ class DynamicTestSession(Base):
     spec_id = Column(CHAR(36), ForeignKey("static_spec.id"), nullable=False) # FK to Static Spec
     spec = relationship("StaticSpec", back_populates="sessions")
     target_base_url = Column(String(255), nullable=False)
-    auth_token = Column(Text, nullable=True) # JWT / Bearer Token
-    auth_token_secondary = Column(Text, nullable=True) # Victim Token for BOLA
+    auth_token = Column(Text, nullable=True) # JWT / Bearer Token (auto-populated by AuthEngine)
+    auth_token_secondary = Column(Text, nullable=True) # Victim Token for BOLA (auto-populated)
+
+    # Automated Authentication Credentials
+    auth_username = Column(String(255), nullable=True)
+    auth_password = Column(String(255), nullable=True)
+    auth_sec_username = Column(String(255), nullable=True)
+    auth_sec_password = Column(String(255), nullable=True)
+
+    # Advanced Auth Overrides
+    auth_login_endpoint = Column(String(255), nullable=True)      # e.g. /users/v1/login
+    auth_username_field = Column(String(100), nullable=True)       # e.g. "email" (default: "username")
+    auth_token_path = Column(String(255), nullable=True)           # e.g. "data.jwt" (default: heuristic)
+
     status = Column(SqlEnum(SessionStatus), default=SessionStatus.PENDING)
     
     started_at = Column(DateTime, default=datetime.utcnow)
