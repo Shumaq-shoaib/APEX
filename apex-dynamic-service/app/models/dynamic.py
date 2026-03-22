@@ -1,7 +1,7 @@
 import uuid
 import enum
 from datetime import datetime
-from sqlalchemy import Column, String, Float, Text, DateTime, ForeignKey, CHAR, Enum as SqlEnum
+from sqlalchemy import Column, String, Float, Text, DateTime, ForeignKey, CHAR, Enum as SqlEnum, Integer
 from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import relationship
 from app.db.base_class import Base
@@ -12,6 +12,7 @@ class SessionStatus(str, enum.Enum):
     RUNNING = "RUNNING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
 
 class CaseStatus(str, enum.Enum):
     QUEUED = "QUEUED"
@@ -78,6 +79,12 @@ class DynamicTestSession(Base):
     auth_login_endpoint = Column(String(255), nullable=True)      # e.g. /users/v1/login
     auth_username_field = Column(String(100), nullable=True)       # e.g. "email" (default: "username")
     auth_token_path = Column(String(255), nullable=True)           # e.g. "data.jwt" (default: heuristic)
+
+    # APEX Crawler toggle
+    enable_crawl = Column(String(10), default="false")             # "true" or "false"
+
+    # Scan Speed Setting
+    concurrency_limit = Column(Integer, default=5)
 
     status = Column(SqlEnum(SessionStatus), default=SessionStatus.PENDING)
     

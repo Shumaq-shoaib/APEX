@@ -16,6 +16,10 @@ python-multipart==0.0.7
 pyyaml==6.0.1
 slowapi==0.1.9
 
+# --- APEX Crawler (Dynamic Endpoint Discovery) ---
+beautifulsoup4>=4.12.0
+playwright>=1.40.0
+
 # --- Static Analysis Module / CLI ---
 colorama>=0.4.6
 openapi-spec-validator>=0.7.1

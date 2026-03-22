@@ -51,6 +51,25 @@ export default function History() {
         }
     };
 
+    const handleDelete = async (id: string) => {
+        if (!confirm("Are you sure you want to delete this scan? This action cannot be undone.")) return;
+
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/specs/${id}`, { method: "DELETE" });
+            if (res.ok) {
+                if (selectedScanId === id) {
+                    setSelectedScanId(null);
+                    setAnalysisData(null);
+                }
+                fetchHistory();
+            } else {
+                console.error("Failed to delete scan");
+            }
+        } catch (err) {
+            console.error("Error deleting scan:", err);
+        }
+    };
+
     return (
         <DashboardLayout>
             <div className="space-y-6 h-[calc(100vh-8rem)] flex flex-col">
@@ -74,6 +93,7 @@ export default function History() {
                             specs={specs}
                             activeTab={selectedScanId || ""}
                             onTabChange={handleScanSelect}
+                            onDelete={handleDelete}
                             loading={loading}
                         />
                     </div>

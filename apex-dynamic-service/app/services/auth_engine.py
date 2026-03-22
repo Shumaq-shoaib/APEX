@@ -69,7 +69,14 @@ class AuthEngine:
             )
 
         url = f"{self.target_url}{endpoint}"
-        payload = {username_field: username, "password": password}
+        payload = {
+            username_field: username, 
+            "password": password
+        }
+        
+        # Maximize compatibility: many APIs expect 'email' instead of 'username'
+        if username_field == "username" and "email" not in payload:
+            payload["email"] = username
 
         logger.info(
             "AuthEngine: Attempting login",
@@ -140,6 +147,8 @@ class AuthEngine:
         endpoints = self.blueprint.get("endpoints", [])
         candidates = []
 
+        NEGATIVE_KEYWORDS = ["signup", "sign-up", "register", "registration", "forgot", "reset"]
+        
         for ep in endpoints:
             path = ep.get("path", "")
             method = ep.get("method", "GET").upper()
@@ -152,6 +161,10 @@ class AuthEngine:
 
             path_lower = path.lower()
 
+            # Skip common non-login authentication endpoints
+            if any(neg in path_lower for neg in NEGATIVE_KEYWORDS):
+                continue
+
             for keyword in LOGIN_PATH_KEYWORDS:
                 if keyword in path_lower:
                     # Score: POST is strongly preferred
@@ -160,6 +173,11 @@ class AuthEngine:
                     segments = path_lower.split("/")
                     if keyword in segments:
                         score += 5
+                        
+                    # Slightly penalize arbitrary match like 'auth' so explicit 'login' wins
+                    if keyword == "auth":
+                        score -= 3
+                        
                     candidates.append((score, path))
                     break
 

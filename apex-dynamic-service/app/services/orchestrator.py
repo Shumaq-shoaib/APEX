@@ -30,6 +30,8 @@ class SessionOrchestrator:
         auth_login_endpoint: Optional[str] = None,
         auth_username_field: Optional[str] = None,
         auth_token_path: Optional[str] = None,
+        enable_crawl: str = "false",
+        concurrency_limit: int = 5,
     ) -> DynamicTestSession:
         spec = self.db.query(StaticSpec).filter(StaticSpec.id == spec_id).first()
         if not spec:
@@ -45,6 +47,8 @@ class SessionOrchestrator:
             auth_login_endpoint=auth_login_endpoint,
             auth_username_field=auth_username_field or "username",
             auth_token_path=auth_token_path,
+            enable_crawl=enable_crawl,
+            concurrency_limit=concurrency_limit,
             status=SessionStatus.PENDING
         )
         self.db.add(session)
@@ -166,6 +170,44 @@ class SessionOrchestrator:
                 discovery_case.logs += f"Time: {stats.get('elapsed_sec', 0):.1f}s\n"
                 discovery_case.logs += f"Endpoints: {len(endpoints)}\n"
                 discovery_case.logs += f"Method: {stats.get('method', 'unknown')}\n"
+                self.db.commit()
+
+                # Also run APEX Crawler for quick scans
+                _discovery_log("[APEX Crawler] Starting hybrid crawl...")
+                endpoints = await self._run_crawler(
+                    session.target_base_url, endpoints,
+                    log_callback=_discovery_log
+                )
+                blueprint["endpoints"] = endpoints
+                spec.blueprint_json = json.dumps(blueprint)
+                self.db.commit()
+
+            # --- APEX Crawler: merge mode for file-upload scans ---
+            elif getattr(session, 'enable_crawl', 'false') == 'true':
+                logger.info("enable_crawl=true — running APEX Crawler to merge endpoints")
+                crawl_case = DynamicTestCase(
+                    session_id=session.id,
+                    endpoint_path="/",
+                    method="GET",
+                    check_type=CheckType.OTHER,
+                    status=CaseStatus.QUEUED,
+                    logs="[APEX Crawler — Merge Mode]\n"
+                )
+                self.db.add(crawl_case)
+                self.db.commit()
+                self.db.refresh(crawl_case)
+
+                def _crawl_log(msg: str):
+                    crawl_case.logs = (crawl_case.logs or "") + f"{msg}\n"
+                    self.db.commit()
+
+                endpoints = await self._run_crawler(
+                    session.target_base_url, endpoints,
+                    log_callback=_crawl_log
+                )
+                blueprint["endpoints"] = endpoints
+                spec.blueprint_json = json.dumps(blueprint)
+                crawl_case.status = CaseStatus.EXECUTED
                 self.db.commit()
             
             queued_cases = set()
@@ -291,14 +333,32 @@ class SessionOrchestrator:
 
             logger.info("Test Generation Completed", event="test_generation", count=len(cases))
 
-            for case in cases:
-                try:
-                    await engine.run_test_case(case, session.target_base_url, session.auth_token)
-                except Exception as e:
-                    logger.error(f"Failed to execute test case {case.id}: {e}")
-                    case.status = CaseStatus.FAILED
-                    case.logs = (case.logs or "") + f"\nCRITICAL ERROR: {str(e)}"
-                    self.db.commit()
+            concurrency_limit = getattr(session, 'concurrency_limit', 5)
+            semaphore = asyncio.Semaphore(concurrency_limit)
+            
+            async def _run_bounded_test(case):
+                async with semaphore:
+                    # Check for cancellation
+                    self.db.refresh(session)
+                    if getattr(session, 'status', None) == SessionStatus.CANCELLED:
+                        if case.status == CaseStatus.QUEUED:
+                            case.status = CaseStatus.SKIPPED
+                            case.logs = (case.logs or "") + "\nCancelled by user."
+                            self.db.commit()
+                        return
+
+                    try:
+                        await engine.run_test_case(case, session.target_base_url, session.auth_token)
+                    except Exception as e:
+                        logger.error(f"Failed to execute test case {case.id}: {e}")
+                        case.status = CaseStatus.FAILED
+                        case.logs = (case.logs or "") + f"\nCRITICAL ERROR: {str(e)}"
+                        self.db.commit()
+
+            # Execute all tasks concurrently with bounded limits
+            tasks = [_run_bounded_test(case) for case in cases]
+            if tasks:
+                await asyncio.gather(*tasks)
 
             await engine.close()
 
@@ -317,6 +377,43 @@ class SessionOrchestrator:
             session.error_message = self._classify_error(e)
             self.db.commit()
             raise
+
+    async def _run_crawler(self, target_url, existing_endpoints, log_callback=None):
+        """Run the APEX Crawler and merge discovered endpoints into existing ones."""
+        from app.services.crawler import HybridEngine, generate_blueprint
+
+        if log_callback:
+            log_callback(f"[APEX Crawler] Starting hybrid crawl for {target_url}...")
+
+        try:
+            engine = HybridEngine(target_url)
+            await engine.crawl()
+
+            crawler_blueprint = generate_blueprint(engine.endpoints)
+            crawler_endpoints = crawler_blueprint.get("endpoints", [])
+
+            if log_callback:
+                log_callback(f"[APEX Crawler] Discovered {len(crawler_endpoints)} endpoints")
+
+            # Merge: add crawler endpoints not already in existing set
+            existing_paths = {(ep.get("path"), ep.get("method")) for ep in existing_endpoints}
+            new_count = 0
+            for ep in crawler_endpoints:
+                key = (ep.get("path"), ep.get("method"))
+                if key not in existing_paths:
+                    existing_endpoints.append(ep)
+                    existing_paths.add(key)
+                    new_count += 1
+
+            if log_callback:
+                log_callback(f"[APEX Crawler] Merged {new_count} new endpoints (total: {len(existing_endpoints)})")
+
+        except Exception as e:
+            logger.warning(f"APEX Crawler failed: {e}")
+            if log_callback:
+                log_callback(f"[APEX Crawler] Warning: crawl failed — {e}")
+
+        return existing_endpoints
 
     @staticmethod
     def _classify_error(exc: Exception) -> str:

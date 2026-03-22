@@ -3,7 +3,7 @@ import {
     Shield, Play, Terminal, Lock, Activity, Download, Upload,
     AlertTriangle, RotateCcw, ChevronDown, FileText,
     ArrowUpDown, Search, X, Info, Wrench, CheckCircle2, Eye,
-    User, KeyRound, Settings2, Users
+    User, KeyRound, Settings2, Users, Square
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,7 +31,7 @@ interface DynamicConsoleProps {
     initialSessionId?: string;
 }
 
-type SessionStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
+type SessionStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
 type SeverityFilter = "all" | "Critical" | "High" | "Medium" | "Low";
 
 const SEVERITY_ORDER: Record<string, number> = {
@@ -54,14 +54,26 @@ export default function DynamicConsole({ specId, defaultTargetUrl, initialSessio
     const [showAdvanced, setShowAdvanced] = useState(false);
     const [showSecondary, setShowSecondary] = useState(false);
     const [specFile, setSpecFile] = useState<File | null>(null);
+    const [enableCrawl, setEnableCrawl] = useState(false);
+    const [concurrencyLimit, setConcurrencyLimit] = useState(5);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const [dynamicSessionId, setDynamicSessionId] = useState<string | null>(initialSessionId || null);
-    const [dynamicStatus, setDynamicStatus] = useState<SessionStatus | null>(initialSessionId ? "RUNNING" : null);
+    const [dynamicSessionId, setDynamicSessionId] = useState<string | null>(() => {
+        if (initialSessionId) return initialSessionId;
+        return localStorage.getItem('apex_active_session') || null;
+    });
+    const [dynamicStatus, setDynamicStatus] = useState<SessionStatus | null>(() => {
+        if (initialSessionId) return "RUNNING";
+        if (localStorage.getItem('apex_active_session')) return "RUNNING"; // Assumption to trigger poll
+        return null;
+    });
     const [testCases, setTestCases] = useState<TestCase[]>([]);
     const [dynamicFindings, setDynamicFindings] = useState<Finding[]>([]);
-    const [polling, setPolling] = useState(!!initialSessionId);
+    const [polling, setPolling] = useState(() => {
+        if (initialSessionId) return true;
+        return !!localStorage.getItem('apex_active_session');
+    });
     const [selectedCase, setSelectedCase] = useState<TestCase | null>(null);
     const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
     const [severityFilter, setSeverityFilter] = useState<SeverityFilter>("all");
@@ -111,6 +123,15 @@ export default function DynamicConsole({ specId, defaultTargetUrl, initialSessio
     }, [confirmedExploits]);
 
     useEffect(() => {
+        if (initialSessionId) return; // Don't persist historical views
+        if (dynamicSessionId) {
+            localStorage.setItem('apex_active_session', dynamicSessionId);
+        } else {
+            localStorage.removeItem('apex_active_session');
+        }
+    }, [dynamicSessionId, initialSessionId]);
+
+    useEffect(() => {
         let interval: NodeJS.Timeout;
         const controller = new AbortController();
 
@@ -138,10 +159,12 @@ export default function DynamicConsole({ specId, defaultTargetUrl, initialSessio
                         }));
                         if (incoming.length > 0) setDynamicFindings(incoming);
 
-                        if (data.status === "COMPLETED" || data.status === "FAILED") {
+                        if (data.status === "COMPLETED" || data.status === "FAILED" || data.status === "CANCELLED") {
                             setDynamicFindings(incoming);
                             if (data.status === "FAILED") {
                                 setErrorMessage(data.error_message || "Scan failed. Check scanner logs for details.");
+                            } else if (data.status === "CANCELLED") {
+                                setErrorMessage(data.error_message || "Scan was stopped by user.");
                             }
                             setPolling(false);
                         }
@@ -174,7 +197,7 @@ export default function DynamicConsole({ specId, defaultTargetUrl, initialSessio
 
             let sessionData: { id: string; spec_id: string };
 
-            const authPayload: Record<string, string | null> = {
+            const basePayload: Record<string, string | number | null> = {
                 auth_username: authUsername || null,
                 auth_password: authPassword || null,
                 auth_sec_username: authSecUsername || null,
@@ -182,13 +205,14 @@ export default function DynamicConsole({ specId, defaultTargetUrl, initialSessio
                 auth_login_endpoint: authLoginEndpoint || null,
                 auth_username_field: authUsernameField || null,
                 auth_token_path: authTokenPath || null,
+                concurrency_limit: concurrencyLimit,
             };
 
             if (specId) {
                 const res1 = await fetch(`${API_BASE_URL}/api/sessions/`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ spec_id: specId, target_url: targetUrl, ...authPayload })
+                    body: JSON.stringify({ spec_id: specId, target_url: targetUrl, ...basePayload })
                 });
                 if (!res1.ok) throw new Error("Failed to create session");
                 sessionData = await res1.json();
@@ -206,6 +230,8 @@ export default function DynamicConsole({ specId, defaultTargetUrl, initialSessio
                 if (authLoginEndpoint) formData.append("auth_login_endpoint", authLoginEndpoint);
                 if (authUsernameField) formData.append("auth_username_field", authUsernameField);
                 if (authTokenPath) formData.append("auth_token_path", authTokenPath);
+                if (enableCrawl) formData.append("enable_crawl", "true");
+                formData.append("concurrency_limit", concurrencyLimit.toString());
                 const res = await fetch(`${API_BASE_URL}/api/sessions/direct`, { method: "POST", body: formData });
                 if (!res.ok) throw new Error("Failed to launch scan with spec file");
                 sessionData = await res.json();
@@ -213,7 +239,7 @@ export default function DynamicConsole({ specId, defaultTargetUrl, initialSessio
                 const res = await fetch(`${API_BASE_URL}/api/sessions/quick`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ target_url: targetUrl, ...authPayload })
+                    body: JSON.stringify({ target_url: targetUrl, ...basePayload })
                 });
                 if (!res.ok) throw new Error("Failed to launch quick scan");
                 sessionData = await res.json();
@@ -244,6 +270,19 @@ export default function DynamicConsole({ specId, defaultTargetUrl, initialSessio
         setErrorMessage(null);
         setError(null);
         setPollFailCount(0);
+        localStorage.removeItem('apex_active_session');
+    };
+
+    const handleStopScan = async () => {
+        if (!dynamicSessionId) return;
+        try {
+            await fetch(`${API_BASE_URL}/api/sessions/${dynamicSessionId}/stop`, { method: "POST" });
+            setDynamicStatus("CANCELLED");
+            setPolling(false);
+            setErrorMessage("Scan stopped by user.");
+        } catch (e) {
+            console.error("Failed to stop scan:", e);
+        }
     };
 
     const downloadReport = (format: "html" | "pdf") => {
@@ -426,12 +465,54 @@ export default function DynamicConsole({ specId, defaultTargetUrl, initialSessio
                             </div>
                         )}
 
+                        {/* Active Crawl Toggle (shown when spec file is uploaded) */}
+                        {!specId && specFile && (
+                            <div className="flex items-center gap-3 p-3 border rounded-lg bg-primary/5 border-primary/20">
+                                <input
+                                    type="checkbox"
+                                    id="enableCrawl"
+                                    checked={enableCrawl}
+                                    onChange={(e) => setEnableCrawl(e.target.checked)}
+                                    className="h-4 w-4 rounded border-primary/50 accent-primary cursor-pointer"
+                                />
+                                <div>
+                                    <Label htmlFor="enableCrawl" className="text-sm font-medium cursor-pointer">
+                                        Enable Active Crawling
+                                    </Label>
+                                    <p className="text-xs text-muted-foreground">
+                                        Discover additional endpoints by crawling the live target and merge them with the spec.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
                         {specId && (
                             <div className="bg-muted/50 rounded-lg p-3 flex items-center gap-2 text-xs">
                                 <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
                                 <span>API Specification loaded from Static Analysis. Endpoints will be tested precisely.</span>
                             </div>
                         )}
+
+                        {/* Scan Speed Configuration */}
+                        <div className="space-y-2 border-t pt-4">
+                            <Label htmlFor="concurrencyLimit" className="flex justify-between items-center">
+                                <span>Scan Speed (Concurrent Tasks)</span>
+                                <span className="font-mono text-primary font-bold bg-primary/10 px-2 py-1 rounded-md">{concurrencyLimit}</span>
+                            </Label>
+                            <input
+                                id="concurrencyLimit"
+                                type="range"
+                                min="1"
+                                max="50"
+                                value={concurrencyLimit}
+                                onChange={(e) => setConcurrencyLimit(Number(e.target.value))}
+                                className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                            />
+                            <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                <Info className="h-3 w-3" />
+                                Higher values run scans faster but may overload the target API.
+                            </p>
+                        </div>
 
                         {error && <p className="text-sm text-destructive font-medium">{error}</p>}
 
@@ -452,14 +533,14 @@ export default function DynamicConsole({ specId, defaultTargetUrl, initialSessio
     return (
         <div className="flex flex-col gap-4 h-full overflow-hidden">
             {/* Error Banner */}
-            {dynamicStatus === "FAILED" && errorMessage && (
+            {(dynamicStatus === "FAILED" || dynamicStatus === "CANCELLED") && errorMessage && (
                 <Alert variant="destructive" className="shrink-0">
                     <AlertTriangle className="h-4 w-4" />
-                    <AlertTitle>Scan Failed</AlertTitle>
+                    <AlertTitle>{dynamicStatus === "CANCELLED" ? "Scan Stopped" : "Scan Failed"}</AlertTitle>
                     <AlertDescription className="flex items-center justify-between">
                         <span>{errorMessage}</span>
                         <Button variant="outline" size="sm" onClick={handleRetry} className="ml-4 shrink-0">
-                            <RotateCcw className="mr-2 h-3 w-3" /> Retry
+                            <RotateCcw className="mr-2 h-3 w-3" /> Clear & Retry
                         </Button>
                     </AlertDescription>
                 </Alert>
@@ -492,6 +573,11 @@ export default function DynamicConsole({ specId, defaultTargetUrl, initialSessio
                             <CardDescription className="font-mono text-xs">Session: {dynamicSessionId}</CardDescription>
                         </div>
                         <div className="flex items-center gap-4">
+                            {(dynamicStatus === "RUNNING" || dynamicStatus === "PENDING") && (
+                                <Button variant="destructive" size="sm" onClick={handleStopScan} className="h-8">
+                                    <Square className="mr-2 h-3 w-3" /> Stop Scan
+                                </Button>
+                            )}
                             {dynamicStatus === "COMPLETED" && (
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>

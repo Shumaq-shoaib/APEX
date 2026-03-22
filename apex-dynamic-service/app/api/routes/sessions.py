@@ -31,6 +31,7 @@ class SessionCreate(BaseModel):
     auth_login_endpoint: Optional[str] = None
     auth_username_field: Optional[str] = None
     auth_token_path: Optional[str] = None
+    concurrency_limit: int = 5
 
 class EvidenceResponse(BaseModel):
     request_dump: Optional[str] = None
@@ -102,6 +103,7 @@ def create_session(
             auth_login_endpoint=payload.auth_login_endpoint,
             auth_username_field=payload.auth_username_field,
             auth_token_path=payload.auth_token_path,
+            concurrency_limit=payload.concurrency_limit,
         )
         return session
     except ValueError as e:
@@ -124,6 +126,8 @@ async def create_direct_session(
     auth_login_endpoint: Optional[str] = Form(None),
     auth_username_field: Optional[str] = Form(None),
     auth_token_path: Optional[str] = Form(None),
+    enable_crawl: Optional[str] = Form("false"),
+    concurrency_limit: int = Form(5),
     db: Session = Depends(deps.get_db)
 ):
     """
@@ -196,6 +200,8 @@ async def create_direct_session(
         auth_login_endpoint=auth_login_endpoint,
         auth_username_field=auth_username_field,
         auth_token_path=auth_token_path,
+        enable_crawl=enable_crawl or "false",
+        concurrency_limit=concurrency_limit,
     )
     
     # Auto-start
@@ -215,6 +221,7 @@ class QuickScanCreate(BaseModel):
     auth_login_endpoint: Optional[str] = None
     auth_username_field: Optional[str] = None
     auth_token_path: Optional[str] = None
+    concurrency_limit: int = 5
 
 @router.post("/quick", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("5/minute")
@@ -266,6 +273,7 @@ async def create_quick_session(
         auth_login_endpoint=payload.auth_login_endpoint,
         auth_username_field=payload.auth_username_field,
         auth_token_path=payload.auth_token_path,
+        concurrency_limit=payload.concurrency_limit,
     )
 
     background_tasks.add_task(run_scan_wrapper, session.id)
@@ -310,6 +318,23 @@ def run_scan_wrapper(session_id: str):
         db.close()
 
 
+# ─── Route: Get Session by Spec ID ─────────────────────────────────────
+
+@router.get("/by_spec/{spec_id}", response_model=SessionResponse)
+def get_session_by_spec(spec_id: str, db: Session = Depends(deps.get_db)):
+    """
+    Get the most recent session associated with a specific static spec.
+    """
+    session = db.query(DynamicTestSession).options(
+        subqueryload(DynamicTestSession.findings).joinedload(DynamicFinding.evidence),
+        subqueryload(DynamicTestSession.test_cases)
+    ).filter(DynamicTestSession.spec_id == spec_id).order_by(DynamicTestSession.id.desc()).first()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found for this spec")
+    return session
+
+
 # ─── Route: Get Session Status ────────────────────────────────────────
 
 @router.get("/{session_id}", response_model=SessionResponse)
@@ -324,6 +349,26 @@ def get_session(session_id: str, db: Session = Depends(deps.get_db)):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     return session
+
+
+# ─── Route: Stop Session ──────────────────────────────────────────────
+
+@router.post("/{session_id}/stop")
+def stop_session(session_id: str, db: Session = Depends(deps.get_db)):
+    """
+    Cancel an active dynamic scan session.
+    """
+    session = db.query(DynamicTestSession).filter(DynamicTestSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    if session.status in [SessionStatus.COMPLETED, SessionStatus.FAILED, SessionStatus.CANCELLED]:
+        return {"status": "already_finished", "current_status": session.status}
+    
+    session.status = SessionStatus.CANCELLED
+    session.error_message = "Scan stopped by user."
+    db.commit()
+    return {"status": "cancelled"}
 
 
 # ─── Route: Generate Report ──────────────────────────────────────────

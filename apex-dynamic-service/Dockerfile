@@ -12,6 +12,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install Playwright Chromium browser for APEX Crawler
+RUN playwright install --with-deps chromium
+
 COPY apex-dynamic-service /app
 
 # Expose port (FastAPI default)
