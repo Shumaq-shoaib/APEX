@@ -4,6 +4,7 @@ import re
 import os
 from sklearn.base import BaseEstimator, TransformerMixin
 from ml_module.transformers import TextCombiner 
+__main__.TextCombiner = TextCombiner
 # Path to your saved pipeline
 MODEL_PATH = os.path.join(os.path.dirname(__file__), 'model', 'api_security_pipeline.pkl')
 
