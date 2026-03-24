@@ -3,7 +3,7 @@ import pandas as pd
 import re
 import os
 from sklearn.base import BaseEstimator, TransformerMixin
-from .transformers import TextCombiner 
+from ml_module.transformers import TextCombiner 
 # Path to your saved pipeline
 MODEL_PATH = os.path.join(os.path.dirname(__file__), 'model', 'api_security_pipeline.pkl')
 
